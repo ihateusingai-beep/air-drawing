@@ -48,7 +48,7 @@
         
         <!-- 左側：畫布與視訊區域 -->
         <div class="flex-1 flex flex-col items-center">
-            <div class="relative w-full max-w-[640px] aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80">
+            <div id="canvasContainer" class="relative w-full max-w-[640px] aspect-[4/3] bg-[#0f172a] rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80">
                 
                 <!-- 1. 視訊鏡頭 (置於底層，可調節透明度) -->
                 <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror opacity-40 transition-opacity duration-300" autoplay playsinline></video>
@@ -91,6 +91,23 @@
         <!-- 右側：教學與畫筆控制面板 -->
         <div class="w-full lg:w-80 flex flex-col gap-4">
             
+            <!-- ⚡ 魔法畫筆總開關 (新增功能) -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>⚡</span> 魔法畫筆開關 (預設關閉)
+                </h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="enableDrawBtn" onclick="setDrawingState(true)" class="py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                        <span class="text-lg">🟢</span>
+                        <span>開啟畫畫</span>
+                    </button>
+                    <button id="stopDrawBtn" onclick="setDrawingState(false)" class="py-3 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                        <span class="text-lg">🔴</span>
+                        <span>停止畫畫</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- 學習/描紅模板選擇 -->
             <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
@@ -136,6 +153,20 @@
                     <button id="eraserBtn" onclick="setEraser(this)" class="py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex items-center justify-center gap-1">
                         🧹 橡皮擦
                     </button>
+                </div>
+            </div>
+
+            <!-- 🖼️ 選擇畫布背景顏色 (新增功能) -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>🖼️</span> 選擇畫布背景顏色
+                </h3>
+                <div class="grid grid-cols-5 gap-2" id="bgPalette">
+                    <button onclick="setBgColor('#000000', this)" class="bg-btn h-10 w-10 rounded-xl bg-black border-2 border-transparent transition-all btn-bounce shadow" title="極致黑"></button>
+                    <button onclick="setBgColor('#0f172a', this)" class="bg-btn h-10 w-10 rounded-xl bg-slate-900 border-2 border-white ring-4 ring-slate-500/30 transition-all btn-bounce shadow" title="深岩藍"></button>
+                    <button onclick="setBgColor('#1e1b4b', this)" class="bg-btn h-10 w-10 rounded-xl bg-indigo-950 border-2 border-transparent transition-all btn-bounce shadow" title="幻境紫"></button>
+                    <button onclick="setBgColor('#064e3b', this)" class="bg-btn h-10 w-10 rounded-xl bg-emerald-950 border-2 border-transparent transition-all btn-bounce shadow" title="森林綠"></button>
+                    <button onclick="setBgColor('#450a0a', this)" class="bg-btn h-10 w-10 rounded-xl bg-red-950 border-2 border-transparent transition-all btn-bounce shadow" title="烈焰紅"></button>
                 </div>
             </div>
 
@@ -220,6 +251,8 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
 
         let isWebcamActive = false;
+        let isDrawingEnabled = false; // 預設關閉畫畫功能 (新增功能)
+        let canvasBgColor = '#0f172a'; // 預設背景顏色為深岩藍 (新增功能)
         let brushColor = '#EF4444'; // 預設紅色
         let brushSize = 10;
         let isRainbow = false;
@@ -239,6 +272,7 @@
             setTemplate('none');
             setupWebcamControl();
             setupMouseAndTouchEvents();
+            setDrawingState(false); // 預設呼叫一次，初始化為停筆觀摩狀態
         });
 
         // 確保畫布底色與抗鋸齒
@@ -259,6 +293,49 @@
         }
 
         // --- 4. 畫筆屬性控制器 ---
+        function setDrawingState(enabled) {
+            playClickSound();
+            isDrawingEnabled = enabled;
+            
+            const enableBtn = document.getElementById('enableDrawBtn');
+            const stopBtn = document.getElementById('stopDrawBtn');
+            const gestureTip = document.getElementById('gestureTip');
+            
+            if (enabled) {
+                // 開啟畫筆 UI 高亮
+                enableBtn.className = "py-3 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-emerald-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                stopBtn.className = "py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                if (gestureTip) gestureTip.innerHTML = "💡 提示：伸出食指畫畫，握拳暫停 <b>(畫筆已開啟)</b>";
+            } else {
+                // 關閉畫筆 UI 高亮
+                enableBtn.className = "py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                stopBtn.className = "py-3 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                if (gestureTip) gestureTip.innerHTML = "💡 提示：目前處於<b>停筆觀摩狀態</b>";
+                
+                // 重設繪圖點
+                lastX = null;
+                lastY = null;
+                isDrawingMouse = false;
+            }
+        }
+
+        function setBgColor(color, btn) {
+            playClickSound();
+            canvasBgColor = color;
+            
+            // 變更畫布容器背景顏色
+            const container = document.getElementById('canvasContainer');
+            if (container) {
+                container.style.backgroundColor = color;
+            }
+            
+            // UI 反饋更新
+            document.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
+            if (btn) {
+                btn.classList.add('border-white', 'ring-4');
+            }
+        }
+
         function setColor(color, btn) {
             playClickSound();
             isRainbow = false;
@@ -391,8 +468,8 @@
             exportCanvas.height = drawCanvas.height;
             const exportCtx = exportCanvas.getContext('2d');
             
-            // 滿鋪深色背景
-            exportCtx.fillStyle = '#0f172a'; // slate-900
+            // 滿鋪選定的背景顏色
+            exportCtx.fillStyle = canvasBgColor;
             exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
             
             // 合併描紅模板
@@ -416,12 +493,14 @@
         function setupMouseAndTouchEvents() {
             // 滑鼠事件
             drawCanvas.addEventListener('mousedown', (e) => {
+                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 isDrawingMouse = true;
                 const pos = getRelativeCoords(e);
                 drawStart(pos.x, pos.y);
             });
             
             drawCanvas.addEventListener('mousemove', (e) => {
+                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 if (!isDrawingMouse) return;
                 const pos = getRelativeCoords(e);
                 drawMove(pos.x, pos.y);
@@ -432,6 +511,7 @@
 
             // 觸控事件 (支援平板、手機)
             drawCanvas.addEventListener('touchstart', (e) => {
+                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 if (e.touches.length > 0) {
                     const pos = getRelativeCoords(e.touches[0]);
                     drawStart(pos.x, pos.y);
@@ -439,6 +519,7 @@
             });
 
             drawCanvas.addEventListener('touchmove', (e) => {
+                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 if (e.touches.length > 0) {
                     const pos = getRelativeCoords(e.touches[0]);
                     drawMove(pos.x, pos.y);
@@ -555,6 +636,12 @@
 
                 // 當食指豎起，且中指收起 (確保不是擊掌或張開手)，即判定為「畫畫姿勢」
                 if (isFingerPointingUp && isMiddleFingerDown) {
+                    if (!isDrawingEnabled) {
+                        // 雖然滿足繪圖手勢，但如果目前關閉畫筆功能，僅更新游標，不畫線條
+                        lastX = null;
+                        lastY = null;
+                        return;
+                    }
                     if (lastX === null || lastY === null) {
                         drawStart(targetX, targetY);
                     } else {
