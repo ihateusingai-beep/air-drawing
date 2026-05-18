@@ -107,14 +107,18 @@
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
                     <span>🎯</span> 選擇訓練模式
                 </h3>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="modeDrawBtn" onclick="setTrainingMode('draw')" class="py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                <div class="grid grid-cols-3 gap-1.5">
+                    <button id="modeDrawBtn" onclick="setTrainingMode('draw')" class="py-3 px-1 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1">
                         <span class="text-lg">✏️</span>
                         <span>畫畫與描紅</span>
                     </button>
-                    <button id="modeGameBtn" onclick="setTrainingMode('game')" class="py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                    <button id="modeGameBtn" onclick="setTrainingMode('game')" class="py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1">
                         <span class="text-lg">🎈</span>
                         <span>氣泡消消樂</span>
+                    </button>
+                    <button id="modeKameBtn" onclick="setTrainingMode('kamehameha')" class="py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1" title="雙手靠攏聚集能量發射氣功！">
+                        <span class="text-lg">⚡</span>
+                        <span>雙手龜波</span>
                     </button>
                 </div>
             </div>
@@ -267,6 +271,68 @@
         // --- 1. 音效引擎 (Web Audio API) ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
+        let kameChargeOsc = null;
+        let kameChargeGain = null;
+
+        function startKameChargeSound() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                kameChargeOsc = audioCtx.createOscillator();
+                kameChargeGain = audioCtx.createGain();
+                
+                kameChargeOsc.type = 'sawtooth';
+                kameChargeOsc.frequency.setValueAtTime(90, audioCtx.currentTime);
+                // 音頻隨著能量聚集不斷升高
+                kameChargeOsc.frequency.exponentialRampToValueAtTime(750, audioCtx.currentTime + 1.5);
+                
+                kameChargeGain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+                kameChargeGain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 1.5);
+                
+                // 低通濾波器，讓充電聲更渾厚具有科技感
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 1.5);
+
+                kameChargeOsc.connect(filter);
+                filter.connect(kameChargeGain);
+                kameChargeGain.connect(audioCtx.destination);
+                
+                kameChargeOsc.start();
+            } catch(e) {}
+        }
+
+        function stopKameChargeSound() {
+            if (kameChargeOsc) {
+                try {
+                    kameChargeOsc.stop();
+                } catch(e) {}
+                    kameChargeOsc = null;
+            }
+        }
+
+        function playKameFireSound() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                
+                // 創造一個爆炸重低音
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(500, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 1.0);
+                
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.0);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(now + 1.0);
+            } catch(e) {}
+        }
+
         function playTone(freq, type, duration, volume = 0.1) {
             try {
                 if (audioCtx.state === 'suspended') {
@@ -351,6 +417,14 @@
         let activeBubbles = []; // 氣泡遊戲模式容器
         let gameScore = 0;
 
+        let kameCharge = 0; // 0.0 到 1.0 能量度
+        let kameState = 'idle'; // 'idle' | 'charging' | 'firing'
+        let kameParticles = [];
+        let kameShakeTime = 0; // 畫面抖動倒數毫秒
+        let kameLaserAlpha = 0; // 能量光束透明度
+        let kameMidX = 320;
+        let kameMidY = 240;
+
         // 追蹤軌跡點（滑動平均平滑線條）
         let lastX = null;
         let lastY = null;
@@ -414,15 +488,23 @@
             
             const drawBtn = document.getElementById('modeDrawBtn');
             const gameBtn = document.getElementById('modeGameBtn');
+            const kameBtn = document.getElementById('modeKameBtn');
             const drawSwitchCard = document.getElementById('drawSwitchCard');
             const templateCard = document.getElementById('templateCard');
             const colorCard = document.getElementById('colorCard');
             const sizeCard = document.getElementById('sizeCard');
             const gameScoreContainer = document.getElementById('gameScoreContainer');
 
+            // 重設音效與狀態
+            stopKameChargeSound();
+            kameCharge = 0;
+            kameState = 'idle';
+            kameParticles = [];
+
             if (mode === 'draw') {
-                drawBtn.className = "py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
-                gameBtn.className = "py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                drawBtn.className = "py-3 px-1 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                gameBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                kameBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
                 
                 drawSwitchCard.classList.remove('hidden');
                 templateCard.classList.remove('hidden');
@@ -432,9 +514,10 @@
 
                 activeBubbles = [];
                 setTemplate('none');
-            } else {
-                drawBtn.className = "py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
-                gameBtn.className = "py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+            } else if (mode === 'game') {
+                drawBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                gameBtn.className = "py-3 px-1 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                kameBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
                 
                 drawSwitchCard.classList.add('hidden');
                 templateCard.classList.add('hidden');
@@ -449,6 +532,18 @@
                 for(let i=0; i<3; i++) {
                     spawnBubble();
                 }
+            } else if (mode === 'kamehameha') {
+                drawBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                gameBtn.className = "py-3 px-1 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                kameBtn.className = "py-3 px-1 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-[11px] transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                
+                drawSwitchCard.classList.add('hidden');
+                templateCard.classList.add('hidden');
+                colorCard.classList.add('hidden');
+                sizeCard.classList.add('hidden');
+                gameScoreContainer.classList.add('hidden');
+                
+                tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
             }
             clearCanvas();
         }
@@ -633,12 +728,23 @@
         }
 
         function gameRenderLoop(timestamp) {
+            // 控制畫布搖晃效果
+            if (kameShakeTime > 0) {
+                kameShakeTime -= 16.6;
+                const shakeX = (Math.random() - 0.5) * 20;
+                const shakeY = (Math.random() - 0.5) * 20;
+                document.getElementById('canvasContainer').style.transform = `translate(${shakeX}px, ${shakeY}px)`;
+            } else {
+                document.getElementById('canvasContainer').style.transform = `none`;
+            }
+
             if (trainingMode === 'game') {
                 tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
                 
                 activeBubbles.forEach((bubble) => {
                     bubble.pulsePhase += 0.04;
-                    const animatedRadius = bubble.radius + Math.sin(bubble.pulsePhase) * 3;
+                    // 使用 Math.max(1, ...) 確保氣泡半徑永遠大於 0
+                    const animatedRadius = Math.max(1, bubble.radius + Math.sin(bubble.pulsePhase) * 3);
                     
                     const gradient = tempCtx.createRadialGradient(
                         bubble.x, bubble.y, animatedRadius * 0.2,
@@ -674,6 +780,137 @@
                         tempCtx.stroke();
                     }
                 });
+            } else if (trainingMode === 'kamehameha') {
+                tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
+                
+                // 1. 繪製蓄力粒子向中心集中的特效
+                if (kameState === 'charging' || kameState === 'firing') {
+                    if (Math.random() < 0.6 && kameState === 'charging') {
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = 100 + Math.random() * 150;
+                        kameParticles.push({
+                            x: kameMidX + Math.cos(angle) * dist,
+                            y: kameMidY + Math.sin(angle) * dist,
+                            targetX: kameMidX,
+                            targetY: kameMidY,
+                            size: Math.random() * 5 + 3,
+                            color: `hsl(${190 + Math.random() * 40}, 100%, 75%)`, // 冰藍與亮青色
+                            speed: 0.04 + Math.random() * 0.05
+                        });
+                    }
+                }
+
+                // 更新並渲染粒子
+                for (let i = kameParticles.length - 1; i >= 0; i--) {
+                    const p = kameParticles[i];
+                    if (kameState === 'firing') {
+                        // 射擊時向外散射
+                        p.x += (p.x - p.targetX) * 0.15;
+                        p.y += (p.y - p.targetY) * 0.15;
+                        p.size *= 0.94;
+                    } else {
+                        // 蓄力時往核心集攏
+                        p.x += (p.targetX - p.x) * p.speed;
+                        p.y += (p.targetY - p.y) * p.speed;
+                    }
+                    
+                    tempCtx.beginPath();
+                    tempCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    tempCtx.fillStyle = p.color;
+                    tempCtx.fill();
+
+                    const distToCenter = Math.hypot(p.x - p.targetX, p.y - p.targetY);
+                    if ((kameState !== 'firing' && distToCenter < 10) || p.size < 0.5) {
+                        kameParticles.splice(i, 1);
+                    }
+                }
+
+                // 2. 渲染核心蓄力能量球
+                if (kameState === 'charging') {
+                    // 使用 Math.max(1, ...) 確保在剛開始蓄力或正弦波值為負時，半徑絕不低於 1px
+                    const radius = Math.max(1, kameCharge * 80 + Math.sin(Date.now() / 30) * 5);
+                    
+                    tempCtx.save();
+                    tempCtx.shadowBlur = 30;
+                    tempCtx.shadowColor = '#00f0ff';
+                    
+                    const grad = tempCtx.createRadialGradient(kameMidX, kameMidY, radius * 0.1, kameMidX, kameMidY, radius);
+                    grad.addColorStop(0, '#ffffff');
+                    grad.addColorStop(0.2, '#b3f0ff');
+                    grad.addColorStop(0.7, 'rgba(0, 162, 255, 0.6)');
+                    grad.addColorStop(1, 'rgba(0, 162, 255, 0)');
+                    
+                    tempCtx.beginPath();
+                    tempCtx.arc(kameMidX, kameMidY, radius, 0, Math.PI * 2);
+                    tempCtx.fillStyle = grad;
+                    tempCtx.fill();
+                    
+                    // 繪製文字引導
+                    tempCtx.fillStyle = '#6EE7B7';
+                    tempCtx.font = 'bold 24px sans-serif';
+                    tempCtx.textAlign = 'center';
+                    tempCtx.fillText(`⚡ 龜波氣功蓄力中: ${Math.round(kameCharge * 100)}% ⚡`, kameMidX, kameMidY - 100);
+                    tempCtx.restore();
+                } else if (kameState === 'idle') {
+                    // 沒手時顯示文字提示
+                    tempCtx.fillStyle = '#a5f3fc';
+                    tempCtx.font = 'bold 22px sans-serif';
+                    tempCtx.textAlign = 'center';
+                    tempCtx.fillText("👐 伸出「雙手」靠攏在一起，開始蓄力！", 320, 240);
+                }
+
+                // 3. 渲染震撼爆發雷射光束
+                if (kameState === 'firing') {
+                    kameLaserAlpha -= 0.025;
+                    if (kameLaserAlpha <= 0) {
+                        kameState = 'idle';
+                    } else {
+                        tempCtx.save();
+                        tempCtx.shadowBlur = 50;
+                        tempCtx.shadowColor = '#00beff';
+
+                        // 外部巨大冰藍光柱
+                        tempCtx.beginPath();
+                        tempCtx.moveTo(0, kameMidY);
+                        tempCtx.lineTo(640, kameMidY);
+                        tempCtx.strokeStyle = 'rgba(0, 191, 255, ' + kameLaserAlpha + ')';
+                        tempCtx.lineWidth = 140 * kameLaserAlpha;
+                        tempCtx.stroke();
+
+                        // 內部純白灼熱核心
+                        tempCtx.beginPath();
+                        tempCtx.moveTo(0, kameMidY);
+                        tempCtx.lineTo(640, kameMidY);
+                        tempCtx.strokeStyle = 'rgba(255, 255, 255, ' + kameLaserAlpha + ')';
+                        tempCtx.lineWidth = 45 * kameLaserAlpha;
+                        tempCtx.stroke();
+
+                        // 核心閃裂圓環
+                        tempCtx.beginPath();
+                        tempCtx.arc(kameMidX, kameMidY, 150 * (1 - kameLaserAlpha), 0, Math.PI * 2);
+                        tempCtx.strokeStyle = 'rgba(255, 255, 255, ' + kameLaserAlpha + ')';
+                        tempCtx.lineWidth = 8;
+                        tempCtx.stroke();
+
+                        // 繪製隨機閃電線
+                        for (let j = 0; j < 3; j++) {
+                            tempCtx.beginPath();
+                            tempCtx.moveTo(kameMidX, kameMidY);
+                            let curX = kameMidX;
+                            let curY = kameMidY;
+                            while (curX < 640) {
+                                curX += Math.random() * 40 + 20;
+                                curY += (Math.random() - 0.5) * 60;
+                                tempCtx.lineTo(curX, curY);
+                            }
+                            tempCtx.strokeStyle = 'rgba(179, 240, 255, ' + kameLaserAlpha + ')';
+                            tempCtx.lineWidth = 3;
+                            tempCtx.stroke();
+                        }
+
+                        tempCtx.restore();
+                    }
+                }
             }
             requestAnimationFrame(gameRenderLoop);
         }
@@ -892,6 +1129,67 @@
             }
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // 如果是「雙手龜波氣功模式」且偵測到兩隻手
+                if (trainingMode === 'kamehameha' && results.multiHandLandmarks.length === 2) {
+                    const hand1 = results.multiHandLandmarks[0];
+                    const hand2 = results.multiHandLandmarks[1];
+
+                    // 取得兩手手掌中心(第9號節點 - 中指根部，最穩定的中心點)
+                    const h1_visualX = (1 - hand1[9].x) * drawCanvas.width;
+                    const h1_visualY = hand1[9].y * drawCanvas.height;
+                    const h2_visualX = (1 - hand2[9].x) * drawCanvas.width;
+                    const h2_visualY = hand2[9].y * drawCanvas.height;
+
+                    // 計算雙手中心點距離與物理中點位置
+                    const dist = Math.hypot(h1_visualX - h2_visualX, h1_visualY - h2_visualY);
+                    kameMidX = (h1_visualX + h2_visualX) / 2;
+                    kameMidY = (h1_visualY + h2_visualY) / 2;
+
+                    // 隱藏一般畫筆游標
+                    virtualCursor.classList.add('hidden');
+
+                    // 👐 如果雙手靠近在一起 (距離小於 140 像素) 則開始蓄力！
+                    if (dist < 140) {
+                        if (kameState === 'idle') {
+                            kameState = 'charging';
+                            kameCharge = 0;
+                            startKameChargeSound();
+                        } else if (kameState === 'charging') {
+                            kameCharge += 0.008; // 增加蓄力值 (約 1.5 秒蓄滿)
+                            
+                            // 微幅抖動效果，代表能量不穩定
+                            kameMidX += (Math.random() - 0.5) * 8;
+                            kameMidY += (Math.random() - 0.5) * 8;
+
+                            if (kameCharge >= 1.0) {
+                                // 💥 蓄力完成！發射巨大龜波氣功！
+                                kameState = 'firing';
+                                kameCharge = 0;
+                                kameLaserAlpha = 1.0;
+                                kameShakeTime = 900; // 畫面劇烈震動 0.9 秒
+                                stopKameChargeSound();
+                                playKameFireSound();
+                            }
+                        }
+                    } else {
+                        // 雙手太遠，中斷蓄力
+                        if (kameState === 'charging') {
+                            kameState = 'idle';
+                            kameCharge = 0;
+                            stopKameChargeSound();
+                        }
+                    }
+                    return; // 龜波氣功判定完成，不執行下方畫畫邏輯
+                } else if (trainingMode === 'kamehameha' && results.multiHandLandmarks.length < 2) {
+                    // 單手或無手時，立刻中斷蓄力
+                    if (kameState === 'charging') {
+                        kameState = 'idle';
+                        kameCharge = 0;
+                        stopKameChargeSound();
+                    }
+                }
+
+                // --- 原有一手操控（畫畫與消氣泡模式）之邏輯 ---
                 const landmarks = results.multiHandLandmarks[0];
                 
                 const indexFingerTip = landmarks[8];
@@ -937,6 +1235,13 @@
                 virtualCursor.classList.add('hidden');
                 lastX = null;
                 lastY = null;
+                
+                // 完全失去偵測時中斷蓄力
+                if (trainingMode === 'kamehameha' && kameState === 'charging') {
+                    kameState = 'idle';
+                    kameCharge = 0;
+                    stopKameChargeSound();
+                }
             }
         }
 
@@ -945,7 +1250,7 @@
         });
 
         hands.setOptions({
-            maxNumHands: 1,
+            maxNumHands: 2, // 💡 關鍵變動：升級為最多追蹤 2 隻手，解鎖雙手聯動！
             modelComplexity: 1,
             minDetectionConfidence: 0.7,
             minTrackingConfidence: 0.7
