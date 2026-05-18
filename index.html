@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 魔法空中畫筆 🎨</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MediaPipe CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        /* 鏡像翻轉視訊與畫布，讓左右直覺一致 */
+        .mirror {
+            transform: scaleX(-1);
+        }
+        /* 讓按鈕在點擊時有放大回饋 */
+        .btn-bounce:active {
+            transform: scale(0.92);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white font-sans min-h-screen flex flex-col select-none overflow-x-hidden">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-slate-800 border-b border-slate-700 p-4 shadow-lg flex flex-wrap justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <span class="text-3xl">🎨</span>
+            <div>
+                <h1 class="text-xl font-bold tracking-wider text-amber-400">AI 魔法空中畫筆</h1>
+                <p class="text-xs text-slate-400">舉起食指，在空中畫出美妙圖案吧！</p>
+            </div>
+        </div>
+        <!-- 狀態與快速提示 -->
+        <div class="flex items-center gap-4 bg-slate-900/60 px-4 py-2 rounded-full border border-slate-700/50">
+            <div class="flex items-center gap-2">
+                <span id="statusIndicator" class="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+                <span id="statusText" class="text-xs font-semibold text-slate-300">鏡頭載入中...</span>
+            </div>
+            <div id="gestureTip" class="hidden sm:block text-xs text-amber-300 border-l border-slate-700 pl-4">
+                💡 提示：伸出食指畫畫，握拳暫停
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要操作區 -->
+    <main class="flex-1 flex flex-col lg:flex-row p-4 gap-4 max-w-7xl mx-auto w-full">
+        
+        <!-- 左側：畫布與視訊區域 -->
+        <div class="flex-1 flex flex-col items-center">
+            <div class="relative w-full max-w-[640px] aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80">
+                
+                <!-- 1. 視訊鏡頭 (置於底層，可調節透明度) -->
+                <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror opacity-40 transition-opacity duration-300" autoplay playsinline></video>
+                
+                <!-- 2. 描紅模板層 (置於中間) -->
+                <canvas id="templateCanvas" class="absolute inset-0 w-full h-full object-cover pointer-events-none" width="640" height="480"></canvas>
+                
+                <!-- 3. 主畫圖 Canvas (置於頂層) -->
+                <canvas id="drawingCanvas" class="absolute inset-0 w-full h-full object-cover mirror cursor-crosshair touch-none" width="640" height="480"></canvas>
+                
+                <!-- 4. 指尖虛擬游標 (鏡像處理後定位) -->
+                <div id="virtualCursor" class="absolute w-6 h-6 border-2 border-white bg-amber-400/80 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none shadow-lg hidden">
+                    <div class="absolute inset-1 bg-white rounded-full animate-ping"></div>
+                </div>
+
+                <!-- 5. 提示訊息覆蓋層 -->
+                <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/90 flex flex-col justify-center items-center p-6 text-center z-20 transition-opacity duration-500">
+                    <div class="w-16 h-16 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <h3 class="text-lg font-bold text-amber-400">正在喚醒魔法鏡頭</h3>
+                    <p class="text-sm text-slate-400 mt-2 max-w-xs">請允許瀏覽器存取鏡頭。若無法使用鏡頭，您也可以直接用「滑鼠」或「手指觸控」在畫布上畫畫喔！</p>
+                    <button onclick="skipWebcam()" class="mt-6 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold border border-slate-600 transition-colors btn-bounce">
+                        直接用滑鼠/觸控畫畫 🖱️
+                    </button>
+                </div>
+            </div>
+
+            <!-- 控制視訊畫面的小工具 -->
+            <div class="w-full max-w-[640px] mt-3 flex justify-between items-center bg-slate-800/80 p-3 rounded-xl border border-slate-700/50 text-sm">
+                <div class="flex items-center gap-2">
+                    <span>👤 鏡頭背景：</span>
+                    <input type="range" id="videoOpacity" min="0" max="100" value="40" class="w-24 accent-amber-400">
+                    <span id="opacityVal" class="text-xs font-mono text-slate-300">40%</span>
+                </div>
+                <button onclick="clearCanvas()" class="px-4 py-1.5 bg-rose-600/90 hover:bg-rose-500 text-white font-bold rounded-lg transition-colors btn-bounce shadow-md">
+                    🗑️ 全部擦除
+                </button>
+            </div>
+        </div>
+
+        <!-- 右側：教學與畫筆控制面板 -->
+        <div class="w-full lg:w-80 flex flex-col gap-4">
+            
+            <!-- 學習/描紅模板選擇 -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>✏️</span> 學習描紅模板 (數學與形狀)
+                </h3>
+                <div class="grid grid-cols-2 gap-2" id="templateButtons">
+                    <button data-template="none" onclick="setTemplate('none')" class="template-btn p-3 bg-slate-900 border-2 border-amber-400 text-xs rounded-xl font-bold transition-all btn-bounce text-amber-400">
+                        自由畫畫
+                    </button>
+                    <button data-template="circle" onclick="setTemplate('circle')" class="template-btn p-3 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-xs rounded-xl font-bold transition-all btn-bounce">
+                        🔵 圓形
+                    </button>
+                    <button data-template="triangle" onclick="setTemplate('triangle')" class="template-btn p-3 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-xs rounded-xl font-bold transition-all btn-bounce">
+                        🔺 三角形
+                    </button>
+                    <button data-template="square" onclick="setTemplate('square')" class="template-btn p-3 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-xs rounded-xl font-bold transition-all btn-bounce">
+                        🟩 正方形
+                    </button>
+                    <button data-template="num1" onclick="setTemplate('num1')" class="template-btn p-3 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-xs rounded-xl font-bold transition-all btn-bounce col-span-2">
+                        🔢 數字寫法練習 (1, 2, 3)
+                    </button>
+                </div>
+            </div>
+
+            <!-- 顏色選擇區 -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>🎨</span> 選擇彩虹畫筆
+                </h3>
+                <div class="grid grid-cols-5 gap-2" id="colorPalette">
+                    <!-- 顏色按鈕 -->
+                    <button onclick="setColor('#EF4444', this)" class="color-btn h-10 w-10 rounded-xl bg-red-500 border-2 border-white ring-4 ring-red-500/30 transition-all btn-bounce" title="紅色"></button>
+                    <button onclick="setColor('#3B82F6', this)" class="color-btn h-10 w-10 rounded-xl bg-blue-500 border-2 border-transparent transition-all btn-bounce" title="藍色"></button>
+                    <button onclick="setColor('#10B981', this)" class="color-btn h-10 w-10 rounded-xl bg-emerald-500 border-2 border-transparent transition-all btn-bounce" title="綠色"></button>
+                    <button onclick="setColor('#F59E0B', this)" class="color-btn h-10 w-10 rounded-xl bg-amber-500 border-2 border-transparent transition-all btn-bounce" title="黃色"></button>
+                    <button onclick="setColor('#8B5CF6', this)" class="color-btn h-10 w-10 rounded-xl bg-purple-500 border-2 border-transparent transition-all btn-bounce" title="紫色"></button>
+                </div>
+                <!-- 橡皮擦與彩虹筆 -->
+                <div class="grid grid-cols-2 gap-2 mt-3">
+                    <button id="rainbowBtn" onclick="toggleRainbow()" class="py-2 px-3 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce">
+                        🌈 七彩霓虹筆
+                    </button>
+                    <button id="eraserBtn" onclick="setEraser(this)" class="py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex items-center justify-center gap-1">
+                        🧹 橡皮擦
+                    </button>
+                </div>
+            </div>
+
+            <!-- 筆觸大小 -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>📏</span> 調整畫筆粗細
+                </h3>
+                <div class="flex gap-2">
+                    <button onclick="setLineWidth(4, this)" class="size-btn flex-1 py-2 bg-slate-750 hover:bg-slate-700 rounded-lg text-xs font-semibold border-2 border-transparent">
+                        細線
+                    </button>
+                    <button onclick="setLineWidth(10, this)" class="size-btn flex-1 py-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-lg text-xs font-bold">
+                        中等
+                    </button>
+                    <button onclick="setLineWidth(20, this)" class="size-btn flex-1 py-2 bg-slate-750 hover:bg-slate-700 rounded-lg text-xs font-semibold border-2 border-transparent">
+                        粗線
+                    </button>
+                </div>
+            </div>
+
+            <!-- 功能儲存 -->
+            <button onclick="saveArtwork()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all shadow-lg btn-bounce flex items-center justify-center gap-2 text-sm">
+                💾 儲存並下載我的作品
+            </button>
+
+        </div>
+    </main>
+
+    <!-- 頁尾聲明 -->
+    <footer class="bg-slate-950 p-3 text-center text-xs text-slate-500 border-t border-slate-900 mt-auto">
+        本應用程式完全在本機端運行，不儲存、不傳輸任何視訊影像，確保學生隱私安全 🔒
+    </footer>
+
+    <!-- 音效與邏輯程式碼 -->
+    <script>
+        // --- 1. 音效引擎 (Web Audio API) ---
+        // 免去加載外部音效檔的不穩定性，用程式碼即時合成悅耳提示音
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playTone(freq, type, duration) {
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = type || 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log("Audio play blocked or unsupported");
+            }
+        }
+
+        function playClickSound() { playTone(523.25, 'sine', 0.1); } // C5 短音
+        function playSuccessSound() { 
+            playTone(523.25, 'sine', 0.1); 
+            setTimeout(() => playTone(659.25, 'sine', 0.1), 80); 
+            setTimeout(() => playTone(783.99, 'sine', 0.2), 160); 
+        } // C5-E5-G5 向上和弦
+        function playClearSound() { playTone(150, 'sawtooth', 0.3); } // 沉穩的低音清除感
+
+        // --- 2. 全域狀態變數 ---
+        const video = document.getElementById('webcam');
+        const drawCanvas = document.getElementById('drawingCanvas');
+        const drawCtx = drawCanvas.getContext('2d');
+        const templateCanvas = document.getElementById('templateCanvas');
+        const tempCtx = templateCanvas.getContext('2d');
+        const virtualCursor = document.getElementById('virtualCursor');
+        const videoOpacitySlider = document.getElementById('videoOpacity');
+        const opacityValSpan = document.getElementById('opacityVal');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+        let isWebcamActive = false;
+        let brushColor = '#EF4444'; // 預設紅色
+        let brushSize = 10;
+        let isRainbow = false;
+        let rainbowHue = 0;
+        let isEraser = false;
+
+        // 追蹤軌跡點（滑動平均平滑線條）
+        let lastX = null;
+        let lastY = null;
+        
+        // 滑鼠與觸控繪圖狀態
+        let isDrawingMouse = false;
+
+        // --- 3. 初始化設定 ---
+        window.addEventListener('load', () => {
+            initDrawCanvas();
+            setTemplate('none');
+            setupWebcamControl();
+            setupMouseAndTouchEvents();
+        });
+
+        // 確保畫布底色與抗鋸齒
+        function initDrawCanvas() {
+            drawCtx.lineCap = 'round';
+            drawCtx.lineJoin = 'round';
+            drawCtx.strokeStyle = brushColor;
+            drawCtx.lineWidth = brushSize;
+        }
+
+        // 視訊透明度拉桿設定
+        function setupWebcamControl() {
+            videoOpacitySlider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                video.style.opacity = val / 100;
+                opacityValSpan.innerText = `${val}%`;
+            });
+        }
+
+        // --- 4. 畫筆屬性控制器 ---
+        function setColor(color, btn) {
+            playClickSound();
+            isRainbow = false;
+            isEraser = false;
+            brushColor = color;
+            drawCtx.strokeStyle = color;
+            
+            // UI 反饋
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
+            document.getElementById('eraserBtn').classList.remove('bg-amber-500', 'text-slate-900');
+            document.getElementById('eraserBtn').classList.add('bg-slate-700', 'text-white');
+            document.getElementById('rainbowBtn').classList.remove('ring-4', 'ring-amber-400');
+            
+            btn.classList.add('border-white', 'ring-4');
+            if(color === '#EF4444') btn.classList.add('ring-red-500/30');
+            if(color === '#3B82F6') btn.classList.add('ring-blue-500/30');
+            if(color === '#10B981') btn.classList.add('ring-emerald-500/30');
+            if(color === '#F59E0B') btn.classList.add('ring-amber-500/30');
+            if(color === '#8B5CF6') btn.classList.add('ring-purple-500/30');
+        }
+
+        function toggleRainbow() {
+            playClickSound();
+            isRainbow = true;
+            isEraser = false;
+            
+            // UI 反饋
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
+            document.getElementById('eraserBtn').classList.remove('bg-amber-500', 'text-slate-900');
+            document.getElementById('eraserBtn').classList.add('bg-slate-700', 'text-white');
+            document.getElementById('rainbowBtn').classList.add('ring-4', 'ring-amber-400');
+        }
+
+        function setEraser(btn) {
+            playClickSound();
+            isRainbow = false;
+            isEraser = true;
+            
+            // UI 反饋
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
+            document.getElementById('rainbowBtn').classList.remove('ring-4', 'ring-amber-400');
+            btn.classList.remove('bg-slate-700', 'text-white');
+            btn.classList.add('bg-amber-500', 'text-slate-900');
+        }
+
+        function setLineWidth(size, btn) {
+            playClickSound();
+            brushSize = size;
+            
+            // UI 反饋
+            document.querySelectorAll('.size-btn').forEach(b => {
+                b.classList.remove('bg-slate-900', 'border-amber-400', 'text-amber-400', 'font-bold');
+                b.classList.add('bg-slate-750', 'hover:bg-slate-700', 'text-xs', 'font-semibold', 'border-transparent');
+            });
+            btn.classList.remove('bg-slate-750', 'hover:bg-slate-700', 'border-transparent');
+            btn.classList.add('bg-slate-900', 'border-amber-400', 'text-amber-400', 'font-bold');
+        }
+
+        function clearCanvas() {
+            playClearSound();
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            lastX = null;
+            lastY = null;
+        }
+
+        // --- 5. 學習描紅模板 (教育用) ---
+        function setTemplate(type) {
+            playClickSound();
+            tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
+            
+            // 清除按鈕邊框
+            document.querySelectorAll('.template-btn').forEach(b => {
+                b.classList.remove('border-amber-400', 'text-amber-400', 'bg-slate-900');
+                b.classList.add('bg-slate-750', 'hover:bg-slate-700', 'border-transparent');
+            });
+
+            // 根據傳入的 type 獲取對應按鈕並高亮（避免依賴不穩定的 global event）
+            const btn = document.querySelector(`[data-template="${type}"]`);
+            if (btn && btn.classList) {
+                btn.classList.remove('bg-slate-750', 'hover:bg-slate-700', 'border-transparent');
+                btn.classList.add('border-amber-400', 'text-amber-400', 'bg-slate-900');
+            }
+
+            tempCtx.lineWidth = 6;
+            tempCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+            tempCtx.setLineDash([10, 10]); // 虛線描紅效果
+            tempCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            tempCtx.font = 'bold 36px sans-serif';
+            tempCtx.textAlign = 'center';
+
+            if (type === 'circle') {
+                tempCtx.beginPath();
+                tempCtx.arc(320, 240, 140, 0, Math.PI * 2);
+                tempCtx.stroke();
+                tempCtx.fillText("🔴 圓形 Circle", 320, 70);
+            } else if (type === 'triangle') {
+                tempCtx.beginPath();
+                tempCtx.moveTo(320, 100);
+                tempCtx.lineTo(150, 380);
+                tempCtx.lineTo(490, 380);
+                tempCtx.closePath();
+                tempCtx.stroke();
+                tempCtx.fillText("🔺 三角形 Triangle", 320, 70);
+            } else if (type === 'square') {
+                tempCtx.beginPath();
+                tempCtx.rect(170, 100, 300, 280);
+                tempCtx.stroke();
+                tempCtx.fillText("🟩 正方形 Square", 320, 70);
+            } else if (type === 'num1') {
+                tempCtx.font = 'bold 120px sans-serif';
+                // 1
+                tempCtx.fillText("1", 160, 260);
+                // 2
+                tempCtx.fillText("2", 320, 260);
+                // 3
+                tempCtx.fillText("3", 480, 260);
+                
+                tempCtx.font = 'bold 24px sans-serif';
+                tempCtx.fillText("練習寫寫看：數字 1、2、3", 320, 380);
+            }
+        }
+
+        // --- 6. 畫作存檔與下載 ---
+        function saveArtwork() {
+            playSuccessSound();
+            
+            // 創建一個新的畫布用來合併背景和使用者的線條 (避免下載到鏡頭視訊)
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = drawCanvas.width;
+            exportCanvas.height = drawCanvas.height;
+            const exportCtx = exportCanvas.getContext('2d');
+            
+            // 滿鋪深色背景
+            exportCtx.fillStyle = '#0f172a'; // slate-900
+            exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+            
+            // 合併描紅模板
+            exportCtx.drawImage(templateCanvas, 0, 0);
+            
+            // 合併使用者畫作 (由於原畫布是利用 CSS transform: scaleX(-1) 鏡像呈現，導出時我們維持正常方向)
+            exportCtx.save();
+            exportCtx.translate(exportCanvas.width, 0);
+            exportCtx.scale(-1, 1);
+            exportCtx.drawImage(drawCanvas, 0, 0);
+            exportCtx.restore();
+            
+            // 下載
+            const link = document.createElement('a');
+            link.download = `我的魔法畫作-${new Date().toLocaleDateString()}.png`;
+            link.href = exportCanvas.toDataURL();
+            link.click();
+        }
+
+        // --- 7. 滑鼠與觸控支援 (無相機備用方案) ---
+        function setupMouseAndTouchEvents() {
+            // 滑鼠事件
+            drawCanvas.addEventListener('mousedown', (e) => {
+                isDrawingMouse = true;
+                const pos = getRelativeCoords(e);
+                drawStart(pos.x, pos.y);
+            });
+            
+            drawCanvas.addEventListener('mousemove', (e) => {
+                if (!isDrawingMouse) return;
+                const pos = getRelativeCoords(e);
+                drawMove(pos.x, pos.y);
+            });
+            
+            drawCanvas.addEventListener('mouseup', () => { isDrawingMouse = false; lastX = null; lastY = null; });
+            drawCanvas.addEventListener('mouseleave', () => { isDrawingMouse = false; lastX = null; lastY = null; });
+
+            // 觸控事件 (支援平板、手機)
+            drawCanvas.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 0) {
+                    const pos = getRelativeCoords(e.touches[0]);
+                    drawStart(pos.x, pos.y);
+                }
+            });
+
+            drawCanvas.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 0) {
+                    const pos = getRelativeCoords(e.touches[0]);
+                    drawMove(pos.x, pos.y);
+                    e.preventDefault(); // 防止滾動干擾
+                }
+            });
+
+            drawCanvas.addEventListener('touchend', () => { lastX = null; lastY = null; });
+        }
+
+        // 計算相對於 Canvas 寬高比例的坐標
+        function getRelativeCoords(e) {
+            const rect = drawCanvas.getBoundingClientRect();
+            // 注意：因為 Canvas 在 CSS 裡被 mirror (scaleX(-1)) 了，滑鼠/觸控定位也要反轉 X 軸
+            const x = drawCanvas.width - (((e.clientX - rect.left) / rect.width) * drawCanvas.width);
+            const y = ((e.clientY - rect.top) / rect.height) * drawCanvas.height;
+            return { x, y };
+        }
+
+        // 核心畫圖邏輯：下筆
+        function drawStart(x, y) {
+            lastX = x;
+            lastY = y;
+        }
+
+        // 核心畫圖邏輯：移動
+        function drawMove(x, y) {
+            if (lastX === null || lastY === null) return;
+            
+            drawCtx.beginPath();
+            drawCtx.moveTo(lastX, lastY);
+            
+            // 七彩霓虹筆邏輯
+            if (isRainbow) {
+                rainbowHue = (rainbowHue + 3) % 360;
+                drawCtx.strokeStyle = `hsl(${rainbowHue}, 90%, 60%)`;
+            } else if (isEraser) {
+                // 橡皮擦即是將畫筆改為「合成剪切」模式來擦除線條
+                drawCtx.globalCompositeOperation = 'destination-out';
+            } else {
+                drawCtx.globalCompositeOperation = 'source-over';
+                drawCtx.strokeStyle = brushColor;
+            }
+            
+            drawCtx.lineWidth = brushSize;
+            
+            // 指尖與滑動平均平滑線條 (減少震顫)
+            const smoothedX = lastX * 0.4 + x * 0.6;
+            const smoothedY = lastY * 0.4 + y * 0.6;
+            
+            drawCtx.lineTo(smoothedX, smoothedY);
+            drawCtx.stroke();
+            
+            lastX = smoothedX;
+            lastY = smoothedY;
+            
+            // 還原繪圖模式，不影響其他行為
+            drawCtx.globalCompositeOperation = 'source-over';
+        }
+
+        // 當鏡頭載入失敗或手動跳過
+        function skipWebcam() {
+            playClickSound();
+            loadingOverlay.classList.add('opacity-0');
+            setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
+            updateStatus(false, "滑鼠/觸控繪圖模式");
+        }
+
+        function updateStatus(active, text) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusTxt = document.getElementById('statusText');
+            if (active) {
+                indicator.classList.remove('bg-red-500');
+                indicator.classList.add('bg-green-500');
+            } else {
+                indicator.classList.remove('bg-green-500');
+                indicator.classList.add('bg-amber-500');
+            }
+            statusTxt.innerText = text;
+        }
+
+        // --- 8. MediaPipe AI 核心追蹤 (Webcam) ---
+        function onResults(results) {
+            // 當 MediaPipe 首次偵測到資料，關閉加載遮罩
+            if (loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
+                loadingOverlay.classList.add('opacity-0');
+                setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
+                updateStatus(true, "AI 鏡頭追蹤中");
+            }
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0]; // 追蹤第一隻手
+                
+                // 節點 8 是食指指尖 (Index Finger Tip)
+                const indexFingerTip = landmarks[8];
+                const indexFingerPip = landmarks[6]; // 食指第二關節
+                const middleFingerTip = landmarks[12]; // 中指指尖
+                const thumbTip = landmarks[4]; // 大拇指指尖
+
+                // 對應畫布坐標 (0~1 轉換成實際畫布寬高)
+                const targetX = indexFingerTip.x * drawCanvas.width;
+                const targetY = indexFingerTip.y * drawCanvas.height;
+
+                // 顯示指尖虛擬游標 (鏡面轉換)
+                virtualCursor.style.left = `${(1 - indexFingerTip.x) * 100}%`;
+                virtualCursor.style.top = `${indexFingerTip.y * 100}%`;
+                virtualCursor.classList.remove('hidden');
+
+                // 💡 簡單易懂的特殊教育手勢設定：
+                // 1. 食指高於關節 -> 起筆 (開始畫)
+                // 2. 當中指或整隻手握拳 (食指朝下或握緊) -> 收筆 (停止畫)
+                const isFingerPointingUp = indexFingerTip.y < indexFingerPip.y;
+                const isMiddleFingerDown = middleFingerTip.y > landmarks[10].y; // 中指彎曲
+
+                // 當食指豎起，且中指收起 (確保不是擊掌或張開手)，即判定為「畫畫姿勢」
+                if (isFingerPointingUp && isMiddleFingerDown) {
+                    if (lastX === null || lastY === null) {
+                        drawStart(targetX, targetY);
+                    } else {
+                        drawMove(targetX, targetY);
+                    }
+                } else {
+                    // 收筆
+                    lastX = null;
+                    lastY = null;
+                }
+            } else {
+                // 畫面上沒偵測到手
+                virtualCursor.classList.add('hidden');
+                lastX = null;
+                lastY = null;
+            }
+        }
+
+        // 初始化 AI 手勢模型
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1, // 只偵測一隻手，降低運算負擔
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7, // 提高信心指數，降低錯誤抖動
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        // 啟動相機
+        const camera = new Camera(video, {
+            onFrame: async () => {
+                await hands.send({ image: video });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().catch(err => {
+            console.warn("鏡頭初始化失敗或被拒絕。切換至純滑鼠/觸控模式。", err);
+            skipWebcam();
+        });
+
+    </script>
+</body>
+</html>
