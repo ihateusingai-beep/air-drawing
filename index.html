@@ -18,6 +18,14 @@
         .btn-bounce:active {
             transform: scale(0.92);
         }
+        /* 泡泡呼吸與發光動畫 */
+        @keyframes bubblePulse {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        .animate-bubble {
+            animation: bubblePulse 2s infinite ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-white font-sans min-h-screen flex flex-col select-none overflow-x-hidden">
@@ -27,8 +35,8 @@
         <div class="flex items-center gap-3">
             <span class="text-3xl">🎨</span>
             <div>
-                <h1 class="text-xl font-bold tracking-wider text-amber-400">AI 魔法空中畫筆</h1>
-                <p class="text-xs text-slate-400">舉起食指，在空中畫出美妙圖案吧！</p>
+                <h1 class="text-xl font-bold tracking-wider text-amber-400">AI 魔法空中畫筆 <span class="text-xs bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full border border-amber-500/30 ml-2">精細動作訓練版 🎯</span></h1>
+                <p class="text-xs text-slate-400">舉起食指進行空中畫畫或氣泡精準定位訓練！</p>
             </div>
         </div>
         <!-- 狀態與快速提示 -->
@@ -37,8 +45,10 @@
                 <span id="statusIndicator" class="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
                 <span id="statusText" class="text-xs font-semibold text-slate-300">鏡頭載入中...</span>
             </div>
-            <div id="gestureTip" class="hidden sm:block text-xs text-amber-300 border-l border-slate-700 pl-4">
-                💡 提示：伸出食指畫畫，握拳暫停
+            <!-- 分數累計器 -->
+            <div id="gameScoreContainer" class="hidden flex items-center gap-2 border-l border-slate-700 pl-4 text-emerald-400 font-bold text-sm">
+                <span>🎯 氣泡消除分數:</span>
+                <span id="gameScoreText" class="text-lg font-mono">0</span>
             </div>
         </div>
     </header>
@@ -48,29 +58,30 @@
         
         <!-- 左側：畫布與視訊區域 -->
         <div class="flex-1 flex flex-col items-center">
-            <div id="canvasContainer" class="relative w-full max-w-[640px] aspect-[4/3] bg-[#0f172a] rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80">
+            <div id="canvasContainer" class="relative w-full max-w-[640px] aspect-[4/3] bg-[#0f172a] rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80 transition-colors duration-300">
                 
                 <!-- 1. 視訊鏡頭 (置於底層，可調節透明度) -->
                 <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror opacity-40 transition-opacity duration-300" autoplay playsinline></video>
                 
-                <!-- 2. 描紅模板層 (置於中間) -->
+                <!-- 2. 描紅與氣泡遊戲層 (置於中間 - 維持非鏡像以顯示正常方向的字體與氣泡位置) -->
                 <canvas id="templateCanvas" class="absolute inset-0 w-full h-full object-cover pointer-events-none" width="640" height="480"></canvas>
                 
-                <!-- 3. 主畫圖 Canvas (置於頂層) -->
+                <!-- 3. 主畫圖 Canvas (置於頂層 - 鏡像以符合書寫方向) -->
                 <canvas id="drawingCanvas" class="absolute inset-0 w-full h-full object-cover mirror cursor-crosshair touch-none" width="640" height="480"></canvas>
                 
-                <!-- 4. 指尖虛擬游標 (鏡像處理後定位) -->
-                <div id="virtualCursor" class="absolute w-6 h-6 border-2 border-white bg-amber-400/80 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none shadow-lg hidden">
-                    <div class="absolute inset-1 bg-white rounded-full animate-ping"></div>
+                <!-- 4. 指尖虛擬游標 (使用視覺座標定位，置於頂層) -->
+                <div id="virtualCursor" class="absolute w-8 h-8 border-2 border-white bg-amber-400/80 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none shadow-lg hidden z-30 transition-all duration-75">
+                    <div id="cursorInner" class="absolute inset-1.5 bg-white rounded-full flex items-center justify-center text-[10px] font-bold text-slate-900">🌟</div>
+                    <div class="absolute inset-0 bg-white rounded-full animate-ping opacity-30"></div>
                 </div>
 
                 <!-- 5. 提示訊息覆蓋層 -->
-                <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/90 flex flex-col justify-center items-center p-6 text-center z-20 transition-opacity duration-500">
+                <div id="loadingOverlay" class="absolute inset-0 bg-slate-950/90 flex flex-col justify-center items-center p-6 text-center z-40 transition-opacity duration-500">
                     <div class="w-16 h-16 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
                     <h3 class="text-lg font-bold text-amber-400">正在喚醒魔法鏡頭</h3>
-                    <p class="text-sm text-slate-400 mt-2 max-w-xs">請允許瀏覽器存取鏡頭。若無法使用鏡頭，您也可以直接用「滑鼠」或「手指觸控」在畫布上畫畫喔！</p>
+                    <p class="text-sm text-slate-400 mt-2 max-w-xs">請允許瀏覽器存取鏡頭。若無法使用鏡頭，您也可以直接用「滑鼠」或「手指觸控」在畫布上畫畫與點擊氣泡喔！</p>
                     <button onclick="skipWebcam()" class="mt-6 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold border border-slate-600 transition-colors btn-bounce">
-                        直接用滑鼠/觸控畫畫 🖱️
+                        直接用滑鼠/觸控操作 🖱️
                     </button>
                 </div>
             </div>
@@ -89,27 +100,79 @@
         </div>
 
         <!-- 右側：教學與畫筆控制面板 -->
-        <div class="w-full lg:w-80 flex flex-col gap-4">
+        <div class="w-full lg:w-80 flex flex-col gap-4 max-h-[calc(100vh-120px)] overflow-y-auto pr-1">
             
-            <!-- ⚡ 魔法畫筆總開關 (新增功能) -->
+            <!-- ⚡ 訓練模式切換 -->
             <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
-                    <span>⚡</span> 魔法畫筆開關 (預設關閉)
+                    <span>🎯</span> 選擇訓練模式
                 </h3>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="enableDrawBtn" onclick="setDrawingState(true)" class="py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1">
-                        <span class="text-lg">🟢</span>
-                        <span>開啟畫畫</span>
+                    <button id="modeDrawBtn" onclick="setTrainingMode('draw')" class="py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                        <span class="text-lg">✏️</span>
+                        <span>畫畫與描紅</span>
                     </button>
-                    <button id="stopDrawBtn" onclick="setDrawingState(false)" class="py-3 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1">
-                        <span class="text-lg">🔴</span>
-                        <span>停止畫畫</span>
+                    <button id="modeGameBtn" onclick="setTrainingMode('game')" class="py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1">
+                        <span class="text-lg">🎈</span>
+                        <span>氣泡消消樂</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 🟢 畫筆開關 (畫畫模式下適用) -->
+            <div id="drawSwitchCard" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>⚡</span> 魔法畫筆狀態
+                </h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="enableDrawBtn" onclick="setDrawingState(true)" class="py-2.5 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex items-center justify-center gap-1.5">
+                        <span>🟢 開啟畫畫</span>
+                    </button>
+                    <button id="stopDrawBtn" onclick="setDrawingState(false)" class="py-2.5 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex items-center justify-center gap-1.5">
+                        <span>🔴 停止畫畫</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 🩹 智能防手震平滑器 (精細動作關鍵優化) -->
+            <div id="tremorCard" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-sm font-bold text-amber-400 flex items-center gap-2">
+                        <span>🩹</span> 防震顫平滑過濾
+                    </h3>
+                    <span id="smoothingText" class="text-xs font-mono text-emerald-400 font-bold">高防震</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mb-2">手抖嚴重時拉大數值可讓線條變流暢</p>
+                <input type="range" id="smoothingSlider" min="5" max="95" value="70" class="w-full accent-emerald-400">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+                    <span>精細控制 (無防震)</span>
+                    <span>超平滑 (高度過濾)</span>
+                </div>
+            </div>
+
+            <!-- 🌟 選擇魔幻指針樣式 (新增視覺錨定功能) -->
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+                <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+                    <span>✨</span> 魔幻指針樣式 (視覺焦點)
+                </h3>
+                <div class="grid grid-cols-4 gap-2 text-center" id="pointerStyles">
+                    <button onclick="setPointerStyle('🌟', this)" class="pointer-style-btn p-2 bg-slate-900 border-2 border-amber-400 text-amber-400 text-sm rounded-xl font-bold transition-all btn-bounce">
+                        🌟 星星
+                    </button>
+                    <button onclick="setPointerStyle('🎯', this)" class="pointer-style-btn p-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-sm rounded-xl font-bold transition-all btn-bounce">
+                        🎯 靶心
+                    </button>
+                    <button onclick="setPointerStyle('🐾', this)" class="pointer-style-btn p-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-sm rounded-xl font-bold transition-all btn-bounce">
+                        🐾 腳印
+                    </button>
+                    <button onclick="setPointerStyle('🎈', this)" class="pointer-style-btn p-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-sm rounded-xl font-bold transition-all btn-bounce">
+                        🎈 氣球
                     </button>
                 </div>
             </div>
 
             <!-- 學習/描紅模板選擇 -->
-            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+            <div id="templateCard" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
                     <span>✏️</span> 學習描紅模板 (數學與形狀)
                 </h3>
@@ -133,19 +196,17 @@
             </div>
 
             <!-- 顏色選擇區 -->
-            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+            <div id="colorCard" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
                     <span>🎨</span> 選擇彩虹畫筆
                 </h3>
                 <div class="grid grid-cols-5 gap-2" id="colorPalette">
-                    <!-- 顏色按鈕 -->
                     <button onclick="setColor('#EF4444', this)" class="color-btn h-10 w-10 rounded-xl bg-red-500 border-2 border-white ring-4 ring-red-500/30 transition-all btn-bounce" title="紅色"></button>
                     <button onclick="setColor('#3B82F6', this)" class="color-btn h-10 w-10 rounded-xl bg-blue-500 border-2 border-transparent transition-all btn-bounce" title="藍色"></button>
                     <button onclick="setColor('#10B981', this)" class="color-btn h-10 w-10 rounded-xl bg-emerald-500 border-2 border-transparent transition-all btn-bounce" title="綠色"></button>
                     <button onclick="setColor('#F59E0B', this)" class="color-btn h-10 w-10 rounded-xl bg-amber-500 border-2 border-transparent transition-all btn-bounce" title="黃色"></button>
                     <button onclick="setColor('#8B5CF6', this)" class="color-btn h-10 w-10 rounded-xl bg-purple-500 border-2 border-transparent transition-all btn-bounce" title="紫色"></button>
                 </div>
-                <!-- 橡皮擦與彩虹筆 -->
                 <div class="grid grid-cols-2 gap-2 mt-3">
                     <button id="rainbowBtn" onclick="toggleRainbow()" class="py-2 px-3 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce">
                         🌈 七彩霓虹筆
@@ -156,7 +217,7 @@
                 </div>
             </div>
 
-            <!-- 🖼️ 選擇畫布背景顏色 (新增功能) -->
+            <!-- 🖼️ 選擇畫布背景顏色 -->
             <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
                     <span>🖼️</span> 選擇畫布背景顏色
@@ -171,7 +232,7 @@
             </div>
 
             <!-- 筆觸大小 -->
-            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
+            <div id="sizeCard" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-md">
                 <h3 class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
                     <span>📏</span> 調整畫筆粗細
                 </h3>
@@ -204,10 +265,9 @@
     <!-- 音效與邏輯程式碼 -->
     <script>
         // --- 1. 音效引擎 (Web Audio API) ---
-        // 免去加載外部音效檔的不穩定性，用程式碼即時合成悅耳提示音
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        function playTone(freq, type, duration) {
+        function playTone(freq, type, duration, volume = 0.1) {
             try {
                 if (audioCtx.state === 'suspended') {
                     audioCtx.resume();
@@ -218,7 +278,7 @@
                 osc.type = type || 'sine';
                 osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
                 
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.setValueAtTime(volume, audioCtx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
                 
                 osc.connect(gain);
@@ -238,6 +298,29 @@
             setTimeout(() => playTone(783.99, 'sine', 0.2), 160); 
         } // C5-E5-G5 向上和弦
         function playClearSound() { playTone(150, 'sawtooth', 0.3); } // 沉穩的低音清除感
+        
+        function playPopSound() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = 'sine';
+                // 由低頻快速滑到高頻，模擬泡泡爆開聲
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.12);
+                
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } catch(e) {}
+        }
 
         // --- 2. 全域狀態變數 ---
         const video = document.getElementById('webcam');
@@ -249,15 +332,24 @@
         const videoOpacitySlider = document.getElementById('videoOpacity');
         const opacityValSpan = document.getElementById('opacityVal');
         const loadingOverlay = document.getElementById('loadingOverlay');
+        const smoothingSlider = document.getElementById('smoothingSlider');
+        const smoothingText = document.getElementById('smoothingText');
 
         let isWebcamActive = false;
-        let isDrawingEnabled = false; // 預設關閉畫畫功能 (新增功能)
-        let canvasBgColor = '#0f172a'; // 預設背景顏色為深岩藍 (新增功能)
+        let isDrawingEnabled = false; // 預設關閉畫畫功能，以便教師做指示與觀摩
+        let canvasBgColor = '#0f172a'; // 預設背景顏色為深岩藍
         let brushColor = '#EF4444'; // 預設紅色
         let brushSize = 10;
         let isRainbow = false;
         let rainbowHue = 0;
         let isEraser = false;
+
+        // 特殊教育優化變數
+        let trainingMode = 'draw'; // 'draw' | 'game'
+        let smoothingFactor = 0.3; // 透過平滑度控制。0.05為超強防手震，0.95為無防震。預設 0.3 (高防手震)
+        let pointerEmoji = '🌟'; // 視覺焦點游標
+        let activeBubbles = []; // 氣泡遊戲模式容器
+        let gameScore = 0;
 
         // 追蹤軌跡點（滑動平均平滑線條）
         let lastX = null;
@@ -272,10 +364,13 @@
             setTemplate('none');
             setupWebcamControl();
             setupMouseAndTouchEvents();
-            setDrawingState(false); // 預設呼叫一次，初始化為停筆觀摩狀態
+            setDrawingState(false); // 預設初始化為停筆觀摩狀態
+            setupSmoothingControl();
+            
+            // 開始常態的描繪迴圈 (用於氣泡消消樂模式的重繪渲染)
+            requestAnimationFrame(gameRenderLoop);
         });
 
-        // 確保畫布底色與抗鋸齒
         function initDrawCanvas() {
             drawCtx.lineCap = 'round';
             drawCtx.lineJoin = 'round';
@@ -283,7 +378,6 @@
             drawCtx.lineWidth = brushSize;
         }
 
-        // 視訊透明度拉桿設定
         function setupWebcamControl() {
             videoOpacitySlider.addEventListener('input', (e) => {
                 const val = e.target.value;
@@ -292,7 +386,86 @@
             });
         }
 
-        // --- 4. 畫筆屬性控制器 ---
+        function setupSmoothingControl() {
+            smoothingSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                smoothingFactor = 1 - (val / 100); 
+
+                if (val >= 80) {
+                    smoothingText.innerText = "超強防手震";
+                    smoothingText.className = "text-xs font-mono text-emerald-400 font-bold";
+                } else if (val >= 50) {
+                    smoothingText.innerText = "高防震";
+                    smoothingText.className = "text-xs font-mono text-cyan-400 font-bold";
+                } else if (val >= 25) {
+                    smoothingText.innerText = "一般過濾";
+                    smoothingText.className = "text-xs font-mono text-yellow-400 font-bold";
+                } else {
+                    smoothingText.innerText = "精細控制 (無防震)";
+                    smoothingText.className = "text-xs font-mono text-rose-400 font-bold";
+                }
+            });
+        }
+
+        // --- 4. 畫筆屬性與模式控制器 ---
+        function setTrainingMode(mode) {
+            playClickSound();
+            trainingMode = mode;
+            
+            const drawBtn = document.getElementById('modeDrawBtn');
+            const gameBtn = document.getElementById('modeGameBtn');
+            const drawSwitchCard = document.getElementById('drawSwitchCard');
+            const templateCard = document.getElementById('templateCard');
+            const colorCard = document.getElementById('colorCard');
+            const sizeCard = document.getElementById('sizeCard');
+            const gameScoreContainer = document.getElementById('gameScoreContainer');
+
+            if (mode === 'draw') {
+                drawBtn.className = "py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                gameBtn.className = "py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                
+                drawSwitchCard.classList.remove('hidden');
+                templateCard.classList.remove('hidden');
+                colorCard.classList.remove('hidden');
+                sizeCard.classList.remove('hidden');
+                gameScoreContainer.classList.add('hidden');
+
+                activeBubbles = [];
+                setTemplate('none');
+            } else {
+                drawBtn.className = "py-3 px-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-slate-300 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                gameBtn.className = "py-3 px-2 bg-slate-900 border-2 border-amber-400 text-amber-400 rounded-xl font-bold text-xs transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                
+                drawSwitchCard.classList.add('hidden');
+                templateCard.classList.add('hidden');
+                colorCard.classList.add('hidden');
+                sizeCard.classList.add('hidden');
+                gameScoreContainer.classList.remove('hidden');
+
+                gameScore = 0;
+                document.getElementById('gameScoreText').innerText = "0";
+                
+                activeBubbles = [];
+                for(let i=0; i<3; i++) {
+                    spawnBubble();
+                }
+            }
+            clearCanvas();
+        }
+
+        function setPointerStyle(emoji, btn) {
+            playClickSound();
+            pointerEmoji = emoji;
+            document.getElementById('cursorInner').innerText = emoji;
+
+            document.querySelectorAll('.pointer-style-btn').forEach(b => {
+                b.className = "pointer-style-btn p-2 bg-slate-750 hover:bg-slate-700 border-2 border-transparent text-sm rounded-xl font-bold transition-all btn-bounce";
+            });
+            if (btn) {
+                btn.className = "pointer-style-btn p-2 bg-slate-900 border-2 border-amber-400 text-amber-400 text-sm rounded-xl font-bold transition-all btn-bounce";
+            }
+        }
+
         function setDrawingState(enabled) {
             playClickSound();
             isDrawingEnabled = enabled;
@@ -302,17 +475,14 @@
             const gestureTip = document.getElementById('gestureTip');
             
             if (enabled) {
-                // 開啟畫筆 UI 高亮
-                enableBtn.className = "py-3 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-emerald-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1";
-                stopBtn.className = "py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                enableBtn.className = "py-2.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-emerald-500/30 transition-all btn-bounce flex items-center justify-center gap-1.5";
+                stopBtn.className = "py-2.5 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex items-center justify-center gap-1.5";
                 if (gestureTip) gestureTip.innerHTML = "💡 提示：伸出食指畫畫，握拳暫停 <b>(畫筆已開啟)</b>";
             } else {
-                // 關閉畫筆 UI 高亮
-                enableBtn.className = "py-3 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex flex-col items-center justify-center gap-1";
-                stopBtn.className = "py-3 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex flex-col items-center justify-center gap-1";
+                enableBtn.className = "py-2.5 px-2 bg-slate-700 hover:bg-slate-650 text-slate-300 rounded-xl font-bold text-xs border border-transparent transition-all btn-bounce flex items-center justify-center gap-1.5";
+                stopBtn.className = "py-2.5 px-2 bg-rose-650 text-white rounded-xl font-bold text-xs border-2 border-white ring-4 ring-rose-500/30 transition-all btn-bounce flex items-center justify-center gap-1.5";
                 if (gestureTip) gestureTip.innerHTML = "💡 提示：目前處於<b>停筆觀摩狀態</b>";
                 
-                // 重設繪圖點
                 lastX = null;
                 lastY = null;
                 isDrawingMouse = false;
@@ -323,13 +493,11 @@
             playClickSound();
             canvasBgColor = color;
             
-            // 變更畫布容器背景顏色
             const container = document.getElementById('canvasContainer');
             if (container) {
                 container.style.backgroundColor = color;
             }
             
-            // UI 反饋更新
             document.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
             if (btn) {
                 btn.classList.add('border-white', 'ring-4');
@@ -343,7 +511,6 @@
             brushColor = color;
             drawCtx.strokeStyle = color;
             
-            // UI 反饋
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
             document.getElementById('eraserBtn').classList.remove('bg-amber-500', 'text-slate-900');
             document.getElementById('eraserBtn').classList.add('bg-slate-700', 'text-white');
@@ -362,7 +529,6 @@
             isRainbow = true;
             isEraser = false;
             
-            // UI 反饋
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
             document.getElementById('eraserBtn').classList.remove('bg-amber-500', 'text-slate-900');
             document.getElementById('eraserBtn').classList.add('bg-slate-700', 'text-white');
@@ -374,7 +540,6 @@
             isRainbow = false;
             isEraser = true;
             
-            // UI 反饋
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('border-white', 'ring-4'));
             document.getElementById('rainbowBtn').classList.remove('ring-4', 'ring-amber-400');
             btn.classList.remove('bg-slate-700', 'text-white');
@@ -385,7 +550,6 @@
             playClickSound();
             brushSize = size;
             
-            // UI 反饋
             document.querySelectorAll('.size-btn').forEach(b => {
                 b.classList.remove('bg-slate-900', 'border-amber-400', 'text-amber-400', 'font-bold');
                 b.classList.add('bg-slate-750', 'hover:bg-slate-700', 'text-xs', 'font-semibold', 'border-transparent');
@@ -406,18 +570,18 @@
             playClickSound();
             tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
             
-            // 清除按鈕邊框
             document.querySelectorAll('.template-btn').forEach(b => {
                 b.classList.remove('border-amber-400', 'text-amber-400', 'bg-slate-900');
                 b.classList.add('bg-slate-750', 'hover:bg-slate-700', 'border-transparent');
             });
 
-            // 根據傳入的 type 獲取對應按鈕並高亮（避免依賴不穩定的 global event）
             const btn = document.querySelector(`[data-template="${type}"]`);
             if (btn && btn.classList) {
                 btn.classList.remove('bg-slate-750', 'hover:bg-slate-700', 'border-transparent');
                 btn.classList.add('border-amber-400', 'text-amber-400', 'bg-slate-900');
             }
+
+            if (trainingMode === 'game') return;
 
             tempCtx.lineWidth = 6;
             tempCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
@@ -430,7 +594,7 @@
                 tempCtx.beginPath();
                 tempCtx.arc(320, 240, 140, 0, Math.PI * 2);
                 tempCtx.stroke();
-                tempCtx.fillText("🔴 圓形 Circle", 320, 70);
+                tempCtx.fillText("🔵 圓形 Circle", 320, 70);
             } else if (type === 'triangle') {
                 tempCtx.beginPath();
                 tempCtx.moveTo(320, 100);
@@ -446,11 +610,8 @@
                 tempCtx.fillText("🟩 正方形 Square", 320, 70);
             } else if (type === 'num1') {
                 tempCtx.font = 'bold 120px sans-serif';
-                // 1
                 tempCtx.fillText("1", 160, 260);
-                // 2
                 tempCtx.fillText("2", 320, 260);
-                // 3
                 tempCtx.fillText("3", 480, 260);
                 
                 tempCtx.font = 'bold 24px sans-serif';
@@ -458,106 +619,229 @@
             }
         }
 
-        // --- 6. 畫作存檔與下載 ---
+        // --- 6. 氣泡消消樂模式與定點追蹤演算法 ---
+        function spawnBubble() {
+            const margin = 60;
+            activeBubbles.push({
+                x: Math.random() * (templateCanvas.width - margin * 2) + margin,
+                y: Math.random() * (templateCanvas.height - margin * 2) + margin,
+                radius: Math.random() * 15 + 25, // 直徑 50~80px 適合特教指尖點選
+                color: `hsl(${Math.random() * 360}, 90%, 60%)`,
+                pulsePhase: Math.random() * Math.PI,
+                hoverTime: 0 // 累計懸停停留毫秒數，藉此訓練定點控制肌群
+            });
+        }
+
+        function gameRenderLoop(timestamp) {
+            if (trainingMode === 'game') {
+                tempCtx.clearRect(0, 0, templateCanvas.width, templateCanvas.height);
+                
+                activeBubbles.forEach((bubble) => {
+                    bubble.pulsePhase += 0.04;
+                    const animatedRadius = bubble.radius + Math.sin(bubble.pulsePhase) * 3;
+                    
+                    const gradient = tempCtx.createRadialGradient(
+                        bubble.x, bubble.y, animatedRadius * 0.2,
+                        bubble.x, bubble.y, animatedRadius
+                    );
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                    gradient.addColorStop(0.3, bubble.color.replace(')', ', 0.55)').replace('hsl', 'hsla'));
+                    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                    
+                    tempCtx.beginPath();
+                    tempCtx.arc(bubble.x, bubble.y, animatedRadius, 0, Math.PI * 2);
+                    tempCtx.fillStyle = gradient;
+                    tempCtx.fill();
+                    
+                    tempCtx.beginPath();
+                    tempCtx.arc(bubble.x, bubble.y, animatedRadius, 0, Math.PI * 2);
+                    tempCtx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                    tempCtx.lineWidth = 2;
+                    tempCtx.stroke();
+                    
+                    tempCtx.beginPath();
+                    tempCtx.arc(bubble.x - animatedRadius*0.3, bubble.y - animatedRadius*0.3, animatedRadius*0.15, 0, Math.PI * 2);
+                    tempCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    tempCtx.fill();
+
+                    // 繪製懸停進度環 (400毫秒轉滿一圈)
+                    if (bubble.hoverTime > 0) {
+                        const progressPercent = Math.min(bubble.hoverTime / 400, 1);
+                        tempCtx.beginPath();
+                        tempCtx.arc(bubble.x, bubble.y, animatedRadius + 6, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * progressPercent));
+                        tempCtx.strokeStyle = '#6EE7B7'; // emerald-300
+                        tempCtx.lineWidth = 4;
+                        tempCtx.stroke();
+                    }
+                });
+            }
+            requestAnimationFrame(gameRenderLoop);
+        }
+
+        // 核心碰撞偵測：此處傳入的 cursorX, cursorY 必須是與 templateCanvas 物理重合的「視覺座標」
+        function checkBubbleCollisions(cursorX, cursorY) {
+            if (trainingMode !== 'game') return;
+
+            for (let i = activeBubbles.length - 1; i >= 0; i--) {
+                const bubble = activeBubbles[i];
+                const dx = cursorX - bubble.x;
+                const dy = cursorY - bubble.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // 如果指尖在氣泡範圍內 (增加了15px容錯空間，方便控制力較弱的孩子)
+                if (dist <= bubble.radius + 15) {
+                    bubble.hoverTime += 16.6; // 每影格(約16.6ms)累積停留時間
+                    
+                    if (bubble.hoverTime >= 400) { // 連續定點懸停達400毫秒
+                        playPopSound();
+                        activeBubbles.splice(i, 1); // 成功擊破
+                        gameScore += 10;
+                        document.getElementById('gameScoreText').innerText = gameScore;
+                        
+                        setTimeout(() => {
+                            if (trainingMode === 'game') spawnBubble();
+                        }, 500);
+                    }
+                } else {
+                    // 離開氣泡時，緩慢倒退進度，給予精細肌群再次修正定位的機會
+                    bubble.hoverTime = Math.max(0, bubble.hoverTime - 8);
+                }
+            }
+        }
+
+        // --- 7. 畫作存檔與下載 ---
         function saveArtwork() {
             playSuccessSound();
             
-            // 創建一個新的畫布用來合併背景和使用者的線條 (避免下載到鏡頭視訊)
             const exportCanvas = document.createElement('canvas');
             exportCanvas.width = drawCanvas.width;
             exportCanvas.height = drawCanvas.height;
             const exportCtx = exportCanvas.getContext('2d');
             
-            // 滿鋪選定的背景顏色
             exportCtx.fillStyle = canvasBgColor;
             exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
             
-            // 合併描紅模板
             exportCtx.drawImage(templateCanvas, 0, 0);
             
-            // 合併使用者畫作 (由於原畫布是利用 CSS transform: scaleX(-1) 鏡像呈現，導出時我們維持正常方向)
             exportCtx.save();
             exportCtx.translate(exportCanvas.width, 0);
             exportCtx.scale(-1, 1);
             exportCtx.drawImage(drawCanvas, 0, 0);
             exportCtx.restore();
             
-            // 下載
             const link = document.createElement('a');
             link.download = `我的魔法畫作-${new Date().toLocaleDateString()}.png`;
             link.href = exportCanvas.toDataURL();
             link.click();
         }
 
-        // --- 7. 滑鼠與觸控支援 (無相機備用方案) ---
+        // --- 8. 座標解耦轉換系統 (徹底解決鏡向物理落差) ---
+        function getRelativeCoords(e) {
+            const rect = drawCanvas.getBoundingClientRect();
+            
+            // 1. 視覺座標 (Visual Space)：0 為最左，width 為最右
+            const visualX = ((e.clientX - rect.left) / rect.width) * drawCanvas.width;
+            const visualY = ((e.clientY - rect.top) / rect.height) * drawCanvas.height;
+            
+            // 2. 鏡像座標 (Mirrored Canvas Space)：用於 scaleX(-1) 畫布內的點繪
+            const mirroredX = drawCanvas.width - visualX;
+            
+            return { visualX, visualY, mirroredX };
+        }
+
+        // --- 9. 滑鼠與觸控繪圖監聽 ---
         function setupMouseAndTouchEvents() {
-            // 滑鼠事件
+            // 滑鼠點下
             drawCanvas.addEventListener('mousedown', (e) => {
-                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
+                const coords = getRelativeCoords(e);
+                
+                if (trainingMode === 'game') {
+                    checkBubbleCollisions(coords.visualX, coords.visualY);
+                    return;
+                }
+
+                if (!isDrawingEnabled) return;
                 isDrawingMouse = true;
-                const pos = getRelativeCoords(e);
-                drawStart(pos.x, pos.y);
+                drawStart(coords.mirroredX, coords.visualY);
             });
             
+            // 滑鼠移動
             drawCanvas.addEventListener('mousemove', (e) => {
-                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
-                if (!isDrawingMouse) return;
-                const pos = getRelativeCoords(e);
-                drawMove(pos.x, pos.y);
+                const coords = getRelativeCoords(e);
+                
+                // 游標位置更新始終使用「視覺座標」
+                virtualCursor.style.left = `${(coords.visualX / drawCanvas.width) * 100}%`;
+                virtualCursor.style.top = `${(coords.visualY / drawCanvas.height) * 100}%`;
+                virtualCursor.classList.remove('hidden');
+
+                if (trainingMode === 'game') {
+                    checkBubbleCollisions(coords.visualX, coords.visualY);
+                    return;
+                }
+
+                if (!isDrawingEnabled || !isDrawingMouse) return;
+                drawMove(coords.mirroredX, coords.visualY);
             });
             
             drawCanvas.addEventListener('mouseup', () => { isDrawingMouse = false; lastX = null; lastY = null; });
             drawCanvas.addEventListener('mouseleave', () => { isDrawingMouse = false; lastX = null; lastY = null; });
 
-            // 觸控事件 (支援平板、手機)
+            // 觸控支援 (iPad, 平板電腦精細定位優化)
             drawCanvas.addEventListener('touchstart', (e) => {
-                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 if (e.touches.length > 0) {
-                    const pos = getRelativeCoords(e.touches[0]);
-                    drawStart(pos.x, pos.y);
+                    const coords = getRelativeCoords(e.touches[0]);
+                    
+                    if (trainingMode === 'game') {
+                        checkBubbleCollisions(coords.visualX, coords.visualY);
+                        return;
+                    }
+                    
+                    if (!isDrawingEnabled) return;
+                    isDrawingMouse = true;
+                    drawStart(coords.mirroredX, coords.visualY);
                 }
             });
 
             drawCanvas.addEventListener('touchmove', (e) => {
-                if (!isDrawingEnabled) return; // 沒啟用時不畫畫
                 if (e.touches.length > 0) {
-                    const pos = getRelativeCoords(e.touches[0]);
-                    drawMove(pos.x, pos.y);
-                    e.preventDefault(); // 防止滾動干擾
+                    const coords = getRelativeCoords(e.touches[0]);
+                    
+                    virtualCursor.style.left = `${(coords.visualX / drawCanvas.width) * 100}%`;
+                    virtualCursor.style.top = `${(coords.visualY / drawCanvas.height) * 100}%`;
+                    virtualCursor.classList.remove('hidden');
+
+                    if (trainingMode === 'game') {
+                        checkBubbleCollisions(coords.visualX, coords.visualY);
+                        e.preventDefault();
+                        return;
+                    }
+
+                    if (!isDrawingEnabled || !isDrawingMouse) return;
+                    drawMove(coords.mirroredX, coords.visualY);
+                    e.preventDefault();
                 }
             });
 
-            drawCanvas.addEventListener('touchend', () => { lastX = null; lastY = null; });
+            drawCanvas.addEventListener('touchend', () => { isDrawingMouse = false; lastX = null; lastY = null; });
         }
 
-        // 計算相對於 Canvas 寬高比例的坐標
-        function getRelativeCoords(e) {
-            const rect = drawCanvas.getBoundingClientRect();
-            // 注意：因為 Canvas 在 CSS 裡被 mirror (scaleX(-1)) 了，滑鼠/觸控定位也要反轉 X 軸
-            const x = drawCanvas.width - (((e.clientX - rect.left) / rect.width) * drawCanvas.width);
-            const y = ((e.clientY - rect.top) / rect.height) * drawCanvas.height;
-            return { x, y };
-        }
-
-        // 核心畫圖邏輯：下筆
+        // 核心下筆記錄
         function drawStart(x, y) {
             lastX = x;
             lastY = y;
         }
 
-        // 核心畫圖邏輯：移動
+        // 核心畫筆平滑過濾
         function drawMove(x, y) {
             if (lastX === null || lastY === null) return;
             
             drawCtx.beginPath();
             drawCtx.moveTo(lastX, lastY);
             
-            // 七彩霓虹筆邏輯
             if (isRainbow) {
                 rainbowHue = (rainbowHue + 3) % 360;
                 drawCtx.strokeStyle = `hsl(${rainbowHue}, 90%, 60%)`;
             } else if (isEraser) {
-                // 橡皮擦即是將畫筆改為「合成剪切」模式來擦除線條
                 drawCtx.globalCompositeOperation = 'destination-out';
             } else {
                 drawCtx.globalCompositeOperation = 'source-over';
@@ -566,9 +850,9 @@
             
             drawCtx.lineWidth = brushSize;
             
-            // 指尖與滑動平均平滑線條 (減少震顫)
-            const smoothedX = lastX * 0.4 + x * 0.6;
-            const smoothedY = lastY * 0.4 + y * 0.6;
+            // 智慧平滑防抖動公式：整合 smoothingFactor
+            const smoothedX = lastX * (1 - smoothingFactor) + x * smoothingFactor;
+            const smoothedY = lastY * (1 - smoothingFactor) + y * smoothingFactor;
             
             drawCtx.lineTo(smoothedX, smoothedY);
             drawCtx.stroke();
@@ -576,16 +860,14 @@
             lastX = smoothedX;
             lastY = smoothedY;
             
-            // 還原繪圖模式，不影響其他行為
             drawCtx.globalCompositeOperation = 'source-over';
         }
 
-        // 當鏡頭載入失敗或手動跳過
         function skipWebcam() {
             playClickSound();
             loadingOverlay.classList.add('opacity-0');
             setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
-            updateStatus(false, "滑鼠/觸控繪圖模式");
+            updateStatus(false, "滑鼠/觸控操作模式");
         }
 
         function updateStatus(active, text) {
@@ -601,9 +883,8 @@
             statusTxt.innerText = text;
         }
 
-        // --- 8. MediaPipe AI 核心追蹤 (Webcam) ---
+        // --- 10. MediaPipe AI 手勢辨識與追蹤 ---
         function onResults(results) {
-            // 當 MediaPipe 首次偵測到資料，關閉加載遮罩
             if (loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
                 loadingOverlay.classList.add('opacity-0');
                 setTimeout(() => loadingOverlay.classList.add('hidden'), 500);
@@ -611,70 +892,67 @@
             }
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0]; // 追蹤第一隻手
+                const landmarks = results.multiHandLandmarks[0];
                 
-                // 節點 8 是食指指尖 (Index Finger Tip)
                 const indexFingerTip = landmarks[8];
-                const indexFingerPip = landmarks[6]; // 食指第二關節
-                const middleFingerTip = landmarks[12]; // 中指指尖
-                const thumbTip = landmarks[4]; // 大拇指指尖
+                const indexFingerPip = landmarks[6];
+                const middleFingerTip = landmarks[12];
 
-                // 對應畫布坐標 (0~1 轉換成實際畫布寬高)
-                const targetX = indexFingerTip.x * drawCanvas.width;
-                const targetY = indexFingerTip.y * drawCanvas.height;
+                // 1. 轉換為視覺空間坐標 (0 在螢幕最左，640 在最右)
+                const visualX = (1 - indexFingerTip.x) * drawCanvas.width;
+                const visualY = indexFingerTip.y * drawCanvas.height;
 
-                // 顯示指尖虛擬游標 (鏡面轉換)
-                virtualCursor.style.left = `${(1 - indexFingerTip.x) * 100}%`;
-                virtualCursor.style.top = `${indexFingerTip.y * 100}%`;
+                // 2. 轉換為鏡像空間坐標 (繪圖使用)
+                const mirroredX = indexFingerTip.x * drawCanvas.width;
+
+                // 虛擬游標使用「視覺座標」渲染
+                virtualCursor.style.left = `${(visualX / drawCanvas.width) * 100}%`;
+                virtualCursor.style.top = `${(visualY / drawCanvas.height) * 100}%`;
                 virtualCursor.classList.remove('hidden');
 
-                // 💡 簡單易懂的特殊教育手勢設定：
-                // 1. 食指高於關節 -> 起筆 (開始畫)
-                // 2. 當中指或整隻手握拳 (食指朝下或握緊) -> 收筆 (停止畫)
-                const isFingerPointingUp = indexFingerTip.y < indexFingerPip.y;
-                const isMiddleFingerDown = middleFingerTip.y > landmarks[10].y; // 中指彎曲
+                // 碰撞判定直接與「視覺座標」對齊
+                checkBubbleCollisions(visualX, visualY);
 
-                // 當食指豎起，且中指收起 (確保不是擊掌或張開手)，即判定為「畫畫姿勢」
-                if (isFingerPointingUp && isMiddleFingerDown) {
-                    if (!isDrawingEnabled) {
-                        // 雖然滿足繪圖手勢，但如果目前關閉畫筆功能，僅更新游標，不畫線條
+                if (trainingMode === 'draw') {
+                    const isFingerPointingUp = indexFingerTip.y < indexFingerPip.y;
+                    const isMiddleFingerDown = middleFingerTip.y > landmarks[10].y;
+
+                    if (isFingerPointingUp && isMiddleFingerDown) {
+                        if (!isDrawingEnabled) {
+                            lastX = null;
+                            lastY = null;
+                            return;
+                        }
+                        if (lastX === null || lastY === null) {
+                            drawStart(mirroredX, visualY);
+                        } else {
+                            drawMove(mirroredX, visualY);
+                        }
+                    } else {
                         lastX = null;
                         lastY = null;
-                        return;
                     }
-                    if (lastX === null || lastY === null) {
-                        drawStart(targetX, targetY);
-                    } else {
-                        drawMove(targetX, targetY);
-                    }
-                } else {
-                    // 收筆
-                    lastX = null;
-                    lastY = null;
                 }
             } else {
-                // 畫面上沒偵測到手
                 virtualCursor.classList.add('hidden');
                 lastX = null;
                 lastY = null;
             }
         }
 
-        // 初始化 AI 手勢模型
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
         hands.setOptions({
-            maxNumHands: 1, // 只偵測一隻手，降低運算負擔
+            maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7, // 提高信心指數，降低錯誤抖動
+            minDetectionConfidence: 0.7,
             minTrackingConfidence: 0.7
         });
 
         hands.onResults(onResults);
 
-        // 啟動相機
         const camera = new Camera(video, {
             onFrame: async () => {
                 await hands.send({ image: video });
@@ -684,7 +962,7 @@
         });
 
         camera.start().catch(err => {
-            console.warn("鏡頭初始化失敗或被拒絕。切換至純滑鼠/觸控模式。", err);
+            console.warn("鏡頭初始化失敗，進入純觸控/滑鼠備用方案。", err);
             skipWebcam();
         });
 
