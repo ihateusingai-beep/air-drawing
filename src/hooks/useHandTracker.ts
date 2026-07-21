@@ -118,18 +118,25 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
 
     const init = async () => {
       try {
+        // v3.0.7 debug: log progress to console for true error visibility
+        // eslint-disable-next-line no-console
+        console.log('[useHandTracker] init: loading WASM fileset...')
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm',
         )
         if (cancelled) return
+        // eslint-disable-next-line no-console
+        console.log('[useHandTracker] init: WASM loaded, creating HandLandmarker (delegate=CPU)...')
 
         const modelAssetPath =
           modelComplexity === 0
             ? 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
             : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
+        // v3.0.7 fix: 用 CPU delegate (GPU delegate 喺 Mac Safari + 部分 Chromium 唔穩, init 拋 generic error)
+        // Performance 仍然可接受(hand_landmarker.float16 ~3MB, 30fps 偵測)
         const landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath, delegate: 'GPU' },
+          baseOptions: { modelAssetPath, delegate: 'CPU' },
           runningMode: 'VIDEO',
           numHands,
           minHandDetectionConfidence,
@@ -141,10 +148,30 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
           return
         }
         landmarkerRef.current = landmarker
-        setIsReady(true)
-      } catch (err) {
+        // v3.0.7 fix: setIsReady 前 check cancelled (Family F1)
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to init Hand')
+          setIsReady(true)
+          // eslint-disable-next-line no-console
+          console.log('[useHandTracker] init: ready ✓')
+        }
+      } catch (err) {
+        // v3.0.7 debug: 印出真實 err (唔係 Error instance 都 dump 出嚟)
+        // eslint-disable-next-line no-console
+        console.error('[useHandTracker] init failed:', err)
+        if (!cancelled) {
+          const errMsg =
+            err instanceof Error
+              ? err.message
+              : typeof err === 'string'
+                ? err
+                : (() => {
+                    try {
+                      return JSON.stringify(err)
+                    } catch {
+                      return String(err)
+                    }
+                  })()
+          setError(errMsg || 'Init failed (no message)')
           setIsReady(false)
         }
       }
