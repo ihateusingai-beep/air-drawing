@@ -11,7 +11,7 @@
  * 對應 plan §3 store 邊界:zustand 管 UI state,canvas 維持 imperative + ref。
  */
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useImperativeHandle } from 'react'
 import type { Point } from '../services/canvas'
 import {
   DEFAULT_BRUSH,
@@ -25,6 +25,14 @@ import {
 } from '../services/canvas'
 
 export type DrawingMode = 'pen' | 'rainbow' | 'eraser' | 'finger-cam' | 'pose-cam'
+
+/**
+ * Imperative handle exposed via forwardRef / useImperativeHandle.
+ * Parent can call `clear()` without polluting window globals.
+ */
+export interface DrawingCanvasHandle {
+  clear: () => void
+}
 
 interface DrawingCanvasProps {
   /** webcam element ref(由 parent 提供) */
@@ -66,7 +74,8 @@ export function DrawingCanvas({
   webcamOpacity,
   mirror,
   onError: _onError,
-}: DrawingCanvasProps): React.JSX.Element {
+  imperativeRef,
+}: DrawingCanvasProps & { imperativeRef?: React.Ref<DrawingCanvasHandle> }): React.JSX.Element {
   // Internal state for last point
   const lastPointRef = useRef<Point | null>(null)
   const isDrawingRef = useRef(false)
@@ -191,14 +200,14 @@ export function DrawingCanvas({
     clearCanvas(ctx, CANVAS_W, CANVAS_H)
   }, [drawingCanvasRef])
 
-  // Expose clear via window for external button (Phase 3 refactor → imperative ref)
-  useEffect(() => {
-    const w = window as Window & { __drawingCanvasClear?: () => void }
-    w.__drawingCanvasClear = handleClear
-    return () => {
-      delete w.__drawingCanvasClear
-    }
-  }, [handleClear])
+  // Expose imperative handle for parent (Phase 2 batch 2 fix: remove window pollution)
+  useImperativeHandle(
+    imperativeRef,
+    () => ({
+      clear: handleClear,
+    }),
+    [handleClear],
+  )
 
   return (
     <div className="relative w-full max-w-[640px] aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700/80">

@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DrawingCanvas, DEFAULT_BRUSH, ERASER_BRUSH, type DrawingMode } from './DrawingCanvas'
+import { DrawingCanvas, DEFAULT_BRUSH, ERASER_BRUSH, type DrawingMode, type DrawingCanvasHandle } from './DrawingCanvas'
 import { TemplatePicker } from './TemplatePicker'
 import { ColorPalette } from './ColorPalette'
 import { BrushSize } from './BrushSize'
@@ -38,6 +38,7 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
   const templateCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const virtualCursorRef = useRef<HTMLDivElement | null>(null)
+  const drawingCanvasHandleRef = useRef<DrawingCanvasHandle | null>(null)
 
   // State
   const [template, setTemplate] = useState<TemplateId>('none')
@@ -111,8 +112,7 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
 
   const handleClear = useCallback(() => {
     playClearSound()
-    const w = window as Window & { __drawingCanvasClear?: () => void }
-    w.__drawingCanvasClear?.()
+    drawingCanvasHandleRef.current?.clear()
   }, [])
 
   const handleWebcamToggle = useCallback(async () => {
@@ -205,6 +205,7 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
             showWebcam={showWebcam}
             webcamOpacity={webcamOpacity}
             mirror={false}
+            imperativeRef={drawingCanvasHandleRef}
           />
 
           {/* Webcam opacity + clear controls */}

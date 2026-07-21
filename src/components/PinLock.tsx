@@ -4,19 +4,22 @@
  * 對應 E7 PIN 鎖 + 觀察者模式。智障學生保護(R27)。
  *
  * 設計:
- *   - 4-6 digit PIN
- *   - Hash 唔 store plain text(basic hash, Phase 3 升級 Web Crypto API)
+ *   - 4-digit PIN
+ *   - Hash via Web Crypto API (SHA-256 + 16-byte salt) — services/pinHash.ts
  *   - 5 分鐘 idle 自動鎖(Phase 3 加 idle timer)
  *   - Master reset code: 老師可手動 reset (Phase 3 加 file-based recovery)
  *
- * Phase 2 簡化版:
- *   - 4 digit PIN
- *   - Plain hash (XOR + base64) — 唔係 crypto-secure, Phase 3 升級
- *   - 用戶主動鎖 / 解
+ * 向後兼容:Legacy XOR-based hash 仍然 verify 通過,但 verify 時 push 一個
+ * one-time upgrade flag,提示老師「請重新設定 PIN」。Phase 3 升級腳本自動轉移。
  */
 
 import { useState } from 'react'
 import { useProfileStore } from '../store/profileStore'
+import {
+  hashPin as cryptoHashPin,
+  verifyPin as cryptoVerifyPin,
+  isLegacyHash,
+} from '../services/pinHash'
 
 interface PinLockProps {
   open: boolean
@@ -26,21 +29,6 @@ interface PinLockProps {
 }
 
 const PIN_LENGTH = 4
-
-/** Simple hash for Phase 2(Phase 3 升級 Web Crypto API) */
-function hashPin(pin: string): string {
-  // Trivial XOR + base64 — 唔係 crypto-secure, 只係避免 plain text 落 IDB
-  const xored = pin.split('').map((c) => c.charCodeAt(0) ^ 0x5a).join(',')
-  return btoa(xored)
-}
-
-export function verifyPin(pin: string, hash: string): boolean {
-  try {
-    return hashPin(pin) === hash
-  } catch {
-    return false
-  }
-}
 
 export function PinLock({ open, onClose, autoCloseOnUnlock = true }: PinLockProps): React.JSX.Element | null {
   const profile = useProfileStore((s) =>
@@ -53,56 +41,71 @@ export function PinLock({ open, onClose, autoCloseOnUnlock = true }: PinLockProp
   const [step, setStep] = useState<'enter' | 'set' | 'confirm'>('enter')
   const [firstPin, setFirstPin] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   if (!open || !profile) return null
 
   const hasPin = profile.pinHash != null && profile.pinHash.length > 0
 
   const handleDigit = (d: string) => {
+    if (busy) return
     setError(null)
     if (pin.length < PIN_LENGTH) {
       setPin(pin + d)
     }
     if (pin.length === PIN_LENGTH - 1) {
-      // Auto-submit on 4th digit
-      setTimeout(() => {
-        const full = pin + d
-        if (step === 'enter' && hasPin) {
-          if (verifyPin(full, profile.pinHash!)) {
-            setPinUnlocked(true)
-            if (autoCloseOnUnlock) onClose?.()
-          } else {
-            setError('PIN 錯誤')
+      // Auto-submit on 4th digit — async verify
+      const full = pin + d
+      setBusy(true)
+      void (async () => {
+        try {
+          if (step === 'enter' && hasPin) {
+            const ok = await cryptoVerifyPin(full, profile.pinHash!)
+            if (ok) {
+              setPinUnlocked(true)
+              if (autoCloseOnUnlock) onClose?.()
+            } else {
+              setError('PIN 錯誤')
+            }
+          } else if (step === 'set') {
+            setFirstPin(full)
+            setStep('confirm')
+          } else if (step === 'confirm') {
+            if (full === firstPin) {
+              const newHash = await cryptoHashPin(full)
+              await updateProfile(profile.id, { pinHash: newHash })
+              setPinUnlocked(true)
+              if (autoCloseOnUnlock) onClose?.()
+            } else {
+              setError('兩次 PIN 唔一致')
+              setStep('set')
+            }
           }
+        } catch {
+          setError('操作失敗,請重試')
+        } finally {
           setPin('')
-        } else if (step === 'set') {
-          setFirstPin(full)
-          setStep('confirm')
-          setPin('')
-        } else if (step === 'confirm') {
-          if (full === firstPin) {
-            void updateProfile(profile.id, { pinHash: hashPin(full) })
-            setPinUnlocked(true)
-            if (autoCloseOnUnlock) onClose?.()
-          } else {
-            setError('兩次 PIN 唔一致')
-            setStep('set')
-          }
-          setPin('')
+          setBusy(false)
         }
-      }, 100)
+      })()
     }
   }
 
   const handleBackspace = () => {
+    if (busy) return
     setError(null)
     setPin(pin.slice(0, -1))
   }
 
   const handleClear = () => {
+    if (busy) return
     setError(null)
     setPin('')
   }
+
+  // Show upgrade hint if user is on legacy hash (Phase 2 batch 2 升級提示)
+  const showLegacyUpgradeHint =
+    hasPin && profile.pinHash != null && isLegacyHash(profile.pinHash)
 
   return (
     <div
@@ -124,6 +127,12 @@ export function PinLock({ open, onClose, autoCloseOnUnlock = true }: PinLockProp
               ? '設定 4 位數字 PIN'
               : '再輸入一次確認'}
         </p>
+
+        {showLegacyUpgradeHint && (
+          <p className="text-xs text-amber-300 text-center mb-3 bg-amber-900/30 border border-amber-700/50 rounded p-2">
+            🔐 建議重新設定 PIN 以升級到 SHA-256 + Salt 安全標準
+          </p>
+        )}
 
         <div className="flex justify-center gap-3 mb-4" aria-label="PIN 輸入進度">
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
@@ -155,7 +164,8 @@ export function PinLock({ open, onClose, autoCloseOnUnlock = true }: PinLockProp
               key={d}
               type="button"
               onClick={() => handleDigit(d)}
-              className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-lg font-semibold active:scale-95"
+              disabled={busy}
+              className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-lg font-semibold active:scale-95"
             >
               {d}
             </button>
@@ -163,21 +173,24 @@ export function PinLock({ open, onClose, autoCloseOnUnlock = true }: PinLockProp
           <button
             type="button"
             onClick={handleClear}
-            className="py-3 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-sm font-semibold active:scale-95"
+            disabled={busy}
+            className="py-3 rounded-lg bg-rose-600/80 hover:bg-rose-500 disabled:opacity-50 text-white text-sm font-semibold active:scale-95"
           >
             C
           </button>
           <button
             type="button"
             onClick={() => handleDigit('0')}
-            className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-lg font-semibold active:scale-95"
+            disabled={busy}
+            className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-lg font-semibold active:scale-95"
           >
             0
           </button>
           <button
             type="button"
             onClick={handleBackspace}
-            className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold active:scale-95"
+            disabled={busy}
+            className="py-3 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-sm font-semibold active:scale-95"
           >
             ⌫
           </button>
