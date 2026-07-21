@@ -97,6 +97,14 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const activeProfile = useProfileStore((s) =>
     s.profiles.find((p) => p.id === s.activeProfileId),
   )
+
+  // Gate 1 F1 fix: 切 profile 時清 lastTriggerTimeRef, 防舊 profile 嘅 cooldown 影響新 profile
+  // 同時清 celebration / lastClicked 避免 modal 跨 profile 殘留
+  useEffect(() => {
+    lastTriggerTimeRef.current = {}
+    setCelebration(null)
+    setLastClicked(null)
+  }, [activeProfile?.id])
   // v3.0.7.4: default 500 → 1500 配合 TTS 中文句子完整讀完
   // 0.5s 太短, TTS 句未讀完 user 已 trigger 下一個
   const dwellTimeMs = activeProfile?.dwellTimeMs ?? 1500
