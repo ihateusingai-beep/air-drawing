@@ -78,7 +78,12 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const [lastClicked, setLastClicked] = useState<EmotionId | 'skip' | null>(null)
   const [clickCount, setClickCount] = useState(0)
   // v3.0.7.3: trigger celebration overlay state — 控制 affirmation modal 顯示時間
-  const [celebration, setCelebration] = useState<{ emotion: Emotion; key: number } | null>(null)
+  // v3.0.7.5: 加 chipRect (trigger chip 嘅 screen 座標), 畀 emoji flying animation 用起點
+  const [celebration, setCelebration] = useState<{
+    emotion: Emotion
+    key: number
+    chipRect: { x: number; y: number } | null
+  } | null>(null)
   // v3.0.7.4: per-chip last trigger timestamp, handleTrigger 入面 check 防連續 re-trigger
   const lastTriggerTimeRef = useRef<Record<string, number>>({})
 
@@ -137,12 +142,21 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       // Visual feedback
       setLastClicked(emotion.id)
       setClickCount((c) => c + 1)
+      // v3.0.7.5: 攞 trigger chip 嘅 screen 位置, 畀 emoji flying 動畫用起點
+      let chipRect: { x: number; y: number } | null = null
+      if (typeof document !== 'undefined') {
+        const el = document.querySelector(`[data-finger-target="${CSS.escape(id)}"]`) as HTMLElement | null
+        if (el) {
+          const r = el.getBoundingClientRect()
+          chipRect = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        }
+      }
       // v3.0.7.3: trigger celebration modal — 吸引學生更多互動
       // 用 setTimeout 0 確保 React 先 render trigger-flash 完, 然後 modal
       setTimeout(() => {
-        setCelebration({ emotion, key: now })
-        // 1.5s 後自動消失
-        setTimeout(() => setCelebration(null), 1500)
+        setCelebration({ emotion, key: now, chipRect })
+        // 1.8s 後自動消失(由 1.5 加長 0.3 畀 confetti 同 star burst 完整跑)
+        setTimeout(() => setCelebration(null), 1800)
       }, 200)
       // Log
       appendLog({ ts: now, emotionId: emotion.id, source })
@@ -526,7 +540,7 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
             >
               {/* Modal: emoji + label */}
               <div
-                className="px-8 py-6 rounded-3xl shadow-2xl border-4 border-white/40 text-center animate-celebration-scale"
+                className="px-8 py-6 rounded-3xl shadow-2xl border-4 border-white/40 text-center animate-celebration-scale relative z-10"
                 style={{
                   backgroundColor: celebration.emotion.hexSoft,
                   color: celebration.emotion.hex,
@@ -536,7 +550,75 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                 <div className="text-2xl font-bold">{celebration.emotion.labelZh}</div>
                 <div className="text-sm opacity-80 mt-1">{celebration.emotion.labelEn}</div>
               </div>
-              {/* Particle burst: 8 個小圓點從中央散出 */}
+
+              {/* v3.0.7.5: Emoji flying from chip to center
+                  起點 = trigger chip 嘅 screen center (chipRect), 終點 = 0,0 (中央)
+                  0.7s cubic-bezier overshoot bounce */}
+              {celebration.chipRect && (
+                <div
+                  className="absolute text-8xl animate-emoji-fly"
+                  style={{
+                    left: `${celebration.chipRect.x}px`,
+                    top: `${celebration.chipRect.y}px`,
+                    '--start-x': `${celebration.chipRect.x}px`,
+                    '--start-y': `${celebration.chipRect.y}px`,
+                  } as React.CSSProperties}
+                  aria-hidden="true"
+                >
+                  {celebration.emotion.emoji}
+                </div>
+              )}
+
+              {/* v3.0.7.5: Star burst — 6 條 radial lines 由中央射出
+                  0.5s 即時 burst, 即刻滿足感 */}
+              {Array.from({ length: 6 }).map((_, i) => {
+                const angle = (i / 6) * Math.PI * 2
+                const length = 220
+                const tx = Math.cos(angle) * length
+                const ty = Math.sin(angle) * length
+                return (
+                  <div
+                    key={`star-${i}`}
+                    className="absolute w-1.5 h-12 rounded-full animate-celebration-star"
+                    style={{
+                      background: `linear-gradient(to bottom, transparent, ${celebration.emotion.hex}, white)`,
+                      '--tx': `${tx}px`,
+                      '--ty': `${ty}px`,
+                      boxShadow: `0 0 8px ${celebration.emotion.hex}`,
+                    } as React.CSSProperties}
+                  />
+                )
+              })}
+
+              {/* v3.0.7.5: Confetti rain — 24 個 paper bits 從天而降
+                  不同形狀 (rect / circle / triangle), 不同延遲, 不同顏色 */}
+              {Array.from({ length: 24 }).map((_, i) => {
+                const shapes = ['rounded-sm', 'rounded-full', 'rounded-none']
+                const shape = shapes[i % 3]
+                const size = 8 + (i % 3) * 4 // 8/12/16 px
+                const left = (i * 4.17) % 100 // 0-100%
+                const delay = (i % 8) * 0.08 // 0-0.56s stagger
+                const duration = 1.5 + (i % 3) * 0.2 // 1.5-1.9s
+                return (
+                  <div
+                    key={`confetti-${i}`}
+                    className={`absolute ${shape} animate-confetti-fall`}
+                    style={{
+                      width: `${size}px`,
+                      height: `${size * 1.6}px`,
+                      left: `${left}%`,
+                      top: '-20px',
+                      backgroundColor: celebration.emotion.hex,
+                      animationDelay: `${delay}s`,
+                      animationDuration: `${duration}s`,
+                      '--drift': `${(i % 2 === 0 ? 1 : -1) * (20 + (i % 5) * 8)}px`,
+                      '--spin': `${(i % 2 === 0 ? 1 : -1) * (180 + (i % 3) * 60)}deg`,
+                    } as React.CSSProperties}
+                  />
+                )
+              })}
+
+              {/* Particle burst: 8 個小圓點從中央散出 (v3.0.7 既有) */}
               {Array.from({ length: 8 }).map((_, i) => {
                 const angle = (i / 8) * Math.PI * 2
                 const distance = 180 // px
@@ -544,7 +626,7 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                 const ty = Math.sin(angle) * distance
                 return (
                   <div
-                    key={i}
+                    key={`particle-${i}`}
                     className="absolute w-4 h-4 rounded-full animate-celebration-particle"
                     style={{
                       backgroundColor: celebration.emotion.hex,

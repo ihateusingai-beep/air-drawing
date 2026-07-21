@@ -153,3 +153,80 @@ body {
 .animate-feedback-fade-in {
   animation: feedback-fade-in 0.4s ease-out;
 }
+
+/*
+ * v3.0.7.5: Trigger celebration enhancement — 吸引更多互動
+ * - emoji-fly: 從 chip 飛到中央, overshoot bounce
+ * - celebration-star: 6 條 radial lines 從中央射出, 即時 burst
+ * - confetti-fall: 24 個 paper bits 從天而降, 帶 drift + spin + gravity
+ */
+@keyframes emoji-fly {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  60% {
+    transform: translate(
+        calc(50vw - var(--start-x)),
+        calc(50vh - var(--start-y) - 60px)
+      )
+      scale(2.5)
+      rotate(360deg);
+    opacity: 1;
+  }
+  85% {
+    transform: translate(
+        calc(50vw - var(--start-x)),
+        calc(50vh - var(--start-y))
+      )
+      scale(2.2)
+      rotate(380deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(
+        calc(50vw - var(--start-x)),
+        calc(50vh - var(--start-y) + 30px)
+      )
+      scale(0.5)
+      rotate(420deg);
+    opacity: 0;
+  }
+}
+
+.animate-emoji-fly {
+  animation: emoji-fly 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes celebration-star {
+  0% {
+    transform: translate(-50%, -50%) scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+.animate-celebration-star {
+  animation: celebration-star 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) translateX(var(--drift)) rotate(var(--spin));
+    opacity: 0.3;
+  }
+}
+
+.animate-confetti-fall {
+  animation: confetti-fall 1.6s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
