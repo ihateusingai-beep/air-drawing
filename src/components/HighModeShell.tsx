@@ -17,7 +17,7 @@
  *  - Rainbow mode 暫時省略 hue cycling(Phase 3 加)
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { DrawingCanvas, DEFAULT_BRUSH, ERASER_BRUSH, type DrawingMode, type DrawingCanvasHandle } from './DrawingCanvas'
 import { usePageVisibility } from '../hooks/usePageVisibility'
 import { useHandTracker } from '../hooks/useHandTracker'
@@ -313,16 +313,11 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
             imperativeRef={drawingCanvasHandleRef}
           />
 
-          {/* v3.0.8.4: Hand detection status + finger cursor overlay
-              喺 DrawingCanvas 之下, stage 之外。
-              顯示 finger cursor 喺 mon position (fixed, 全 screen).
-              v3.0.8.7.1 fix: video element 冇 CSS scaleX(-1) (鏡頭唔 mirror 視覺),
-                同 drawing canvas stroke 用 normalized tipX 0-1 * 640 (唔 mirror) 一致,
-                所以 cursor 位置用 tipX (唔用 1-tipX)。
-                之前 1-tipX 會 mirror 飛去左邊, 但 stroke 落右邊, 用戶見 cursor 飛走。
-              pointer-events-none 唔阻擋下層 click / pointer event
-              加 finger-cam toggle UX hint — finger ready 但未開 toggle
-              顯示 affordance「按 ✏️ 開啟空中魔法筆」,否則 user 有 detection 但唔知點 draw */}
+          {/* v3.0.8.7.3: FingerCursorOverlay 抽離成子 component
+              之前 inline IIFE 喺 JSX 每次 render 同步 getBoundingClientRect
+              → 30Hz reflow / sec 強制 layout (iPad Safari 會 lag)
+              改用 ResizeObserver + React.memo cache rect (typical <1Hz re-measure)
+              對齊 drawing stroke mapping (tipX * 640, 唔 mirror) */}
           {showWebcam && (
             <div className="mt-2 text-xs text-slate-500 flex flex-col gap-1" aria-live="polite">
               <p>
@@ -344,36 +339,11 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
               )}
             </div>
           )}
-          {hand.isReady && hand.indexFingerTip && showWebcam && webcamRef.current && (() => {
-            const v = webcamRef.current
-            const rect = v.getBoundingClientRect()
-            // v3.0.8.7.1 fix: 對齊 drawing stroke 嘅 mapping (tipX * 640)
-            // video element 冇 CSS scaleX(-1), 鏡頭視覺 = 物理 normalized 0-1
-            // 之前 (1 - tipX) 會 mirror 飛去左邊, 同 stroke 位置唔 match
-            const screenX = hand.indexFingerTip.x * rect.width + rect.left
-            const screenY = hand.indexFingerTip.y * rect.height + rect.top
-            // eslint-disable-next-line no-console
-            console.log('[HighMode] finger cursor overlay', { tipX: hand.indexFingerTip.x, tipY: hand.indexFingerTip.y, screenX, screenY, rectW: rect.width, rectH: rect.height })
-            return (
-              <div
-                className="fixed pointer-events-none z-[100]"
-                style={{
-                  left: `${screenX}px`,
-                  top: `${screenY}px`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-                aria-hidden="true"
-              >
-                <div className="relative w-12 h-12 flex items-center justify-center">
-                  <div className="absolute inset-0 rounded-full bg-cyan-400/30 blur-xl" />
-                  <div className="absolute inset-0 rounded-full bg-cyan-400/50 animate-ping" />
-                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 border-[3px] border-white shadow-2xl flex items-center justify-center">
-                    <span className="text-lg leading-none">👆</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
+          <FingerCursorOverlay
+            tip={hand.indexFingerTip}
+            video={webcamRef.current}
+            visible={hand.isReady && showWebcam}
+          />
 
           {/* Webcam opacity + clear controls */}
           <div className="w-full max-w-[640px] mt-3 flex justify-between items-center bg-slate-800/80 p-3 rounded-xl border border-slate-700/50 text-sm">
@@ -452,3 +422,83 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
     </div>
   )
 }
+
+/**
+ * v3.0.8.7.3: FingerCursorOverlay — 抽離自 HighModeShell inline IIFE
+ *
+ * 解決 performance cliff:
+ *   - 之前 inline IIFE 喺 JSX, 每次 render 同步 `getBoundingClientRect()`
+ *     → 30Hz frame rate 強制 30 次 browser reflow / 秒 (iPad Safari 會 lag)
+ *   - 改用 `ResizeObserver` + `useState` cache rect, 只喺 video 真正
+ *     resize / scroll / mount 時 re-measure (typically < 1Hz)
+ *   - React.memo 包住 — tip 唔變 / video 唔變 → 唔 re-render
+ *
+ * Mirror strategy: video element 冇 CSS scaleX(-1), 用 tipX 直接 map,
+ * 對齊 drawing stroke mapping (tipX * 640).
+ */
+interface FingerCursorOverlayProps {
+  tip: { x: number; y: number } | null
+  video: HTMLVideoElement | null
+  visible: boolean
+}
+
+const FingerCursorOverlay = memo(
+  function FingerCursorOverlay({
+    tip,
+    video,
+    visible,
+  }: FingerCursorOverlayProps): React.JSX.Element | null {
+    const [rect, setRect] = useState<DOMRect | null>(null)
+
+    // Cache video bounding rect — 只喺 video resize / scroll 重新 measure
+    useEffect(() => {
+      if (!video) {
+        setRect(null)
+        return
+      }
+      const measure = (): void => setRect(video.getBoundingClientRect())
+      measure()
+      const ro = new ResizeObserver(measure)
+      ro.observe(video)
+      window.addEventListener('scroll', measure, { passive: true })
+      window.addEventListener('resize', measure, { passive: true })
+      return () => {
+        ro.disconnect()
+        window.removeEventListener('scroll', measure)
+        window.removeEventListener('resize', measure)
+      }
+    }, [video])
+
+    if (!visible || !tip || !rect) return null
+
+    const screenX = tip.x * rect.width + rect.left
+    const screenY = tip.y * rect.height + rect.top
+
+    return (
+      <div
+        className="fixed pointer-events-none z-[100]"
+        style={{
+          left: `${screenX}px`,
+          top: `${screenY}px`,
+          transform: 'translate(-50%, -50%)',
+        }}
+        aria-hidden="true"
+      >
+        <div className="relative w-12 h-12 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full bg-cyan-400/30 blur-xl" />
+          <div className="absolute inset-0 rounded-full bg-cyan-400/50 animate-ping" />
+          <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 border-[3px] border-white shadow-2xl flex items-center justify-center">
+            <span className="text-lg leading-none">👆</span>
+          </div>
+        </div>
+      </div>
+    )
+  },
+  // Custom comparator: tip 係新 object literal 每個 frame, 比較 content 而非 reference
+  // 否則 memo 失效, 每個 frame 都 re-render, defeats optimization
+  (prev, next) =>
+    prev.visible === next.visible &&
+    prev.video === next.video &&
+    (prev.tip?.x ?? -1) === (next.tip?.x ?? -1) &&
+    (prev.tip?.y ?? -1) === (next.tip?.y ?? -1),
+)
