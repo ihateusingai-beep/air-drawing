@@ -15,6 +15,7 @@
 import type { RefObject } from 'react'
 import { GRID_LAYOUT, type Emotion, type EmotionId } from '../../constants/emotions'
 import type { ChipProps } from '../../hooks/useFingerHover'
+import type { UseHandTrackerState } from '../../hooks/useHandTracker'
 
 export interface WeakModeChipGridProps {
   webcamRef: RefObject<HTMLVideoElement | null>
@@ -24,11 +25,8 @@ export interface WeakModeChipGridProps {
   lastClicked: EmotionId | 'skip' | null
   progress: number
   getChipProps: (id: string) => ChipProps
-  /** Finger tracker 狀態 */
-  hand: {
-    isReady: boolean
-    indexFingerTip: { x: number; y: number } | null
-  }
+  /** Finger tracker 狀態 (整個 state, 唔揀 field) */
+  hand: UseHandTrackerState
 }
 
 export function WeakModeChipGrid({

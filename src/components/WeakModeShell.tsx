@@ -98,6 +98,11 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   // v3.0.7.4: per-chip last trigger timestamp
   const lastTriggerTimeRef = useRef<Record<string, number>>({})
 
+  // v3.0.8 audit fix: nested setTimeout leak (setCelebration 200ms + 1800ms)
+  // Unmount 期間 timer 仍 fire, setState on unmounted component
+  // Fix: Set ref 收集所有 pending timer IDs, unmount cleanup 一次過 clear
+  const celebrationTimersRef = useRef<Set<number>>(new Set())
+
   // R36 緩解 + Bug 3 fix: webcam optional, default opacity 30%
   const [showWebcam, setShowWebcam] = useState(false)
   const [webcamOpacity, setWebcamOpacity] = useState(30)
@@ -130,35 +135,11 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   useEffect(() => {
     return () => {
       stopTts()
+      // v3.0.8 audit fix: clear 所有 pending celebration timer
+      celebrationTimersRef.current.forEach((id) => window.clearTimeout(id))
+      celebrationTimersRef.current.clear()
     }
   }, [])
-
-  // v3.0.7.6 (UX-1): 5s camera fallback 邏輯
-  // 條件: 鏡頭 ON + 唔係 iPad + 唔 suspend + 唔係 AAC mode
-  // 5 秒內 hand.isReady 仲 false → 顯示 fallback hint
-  // isIPad 從 useDwellClick 拎, 但呢個 effect 必須喺 useDwellClick 之前(decl 順序)
-  // 解法: useDwellClick 內部 detectIpadTouchOnly() 係 sync, 我哋 copy 邏輯
-  useEffect(() => {
-    const isIpadLike = typeof navigator !== 'undefined' && /iPad/.test(navigator.userAgent)
-    if (!showWebcam || isIpadLike || aacMode) {
-      setShowFallbackHint(false)
-      if (fallbackTimerRef.current !== null) {
-        window.clearTimeout(fallbackTimerRef.current)
-        fallbackTimerRef.current = null
-      }
-      return
-    }
-    // Start 5s timer
-    fallbackTimerRef.current = window.setTimeout(() => {
-      setShowFallbackHint(true)
-    }, HAND_INIT_FALLBACK_MS)
-    return () => {
-      if (fallbackTimerRef.current !== null) {
-        window.clearTimeout(fallbackTimerRef.current)
-        fallbackTimerRef.current = null
-      }
-    }
-  }, [showWebcam, aacMode])
 
   const handleTrigger = useCallback(
     (id: string, source: 'mouse-dwell' | 'touch-click' | 'mouse-click' | 'finger-hover') => {
@@ -190,10 +171,17 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
         }
       }
 
-      setTimeout(() => {
+      // v3.0.8 audit fix: timer IDs 收集落 ref, unmount 時一次過 clear
+      const showTimer = window.setTimeout(() => {
         setCelebration({ emotion, key: now, chipRect })
-        setTimeout(() => setCelebration(null), 1800)
+        celebrationTimersRef.current.delete(showTimer)
+        const hideTimer = window.setTimeout(() => {
+          setCelebration(null)
+          celebrationTimersRef.current.delete(hideTimer)
+        }, 1800)
+        celebrationTimersRef.current.add(hideTimer)
       }, 200)
+      celebrationTimersRef.current.add(showTimer)
       appendLog({ ts: now, emotionId: emotion.id, source })
     },
     [ttsOn],
@@ -224,6 +212,40 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   // 合併 hover: finger 優先
   const hoveredId = fingerHoveredId ?? mouseHoveredId
   const progress = fingerHoveredId ? fingerProgress : mouseProgress
+
+  // v3.0.7.6 (UX-1): 5s camera fallback 邏輯
+  // 條件: 鏡頭 ON + 唔係 iPad + 唔係 AAC mode + 5s 仲 hand.isReady false
+  // v3.0.8 audit fix: hand.isReady 加落 deps, ready 時即停 fallback hint
+  useEffect(() => {
+    const isIpadLike = typeof navigator !== 'undefined' && /iPad/.test(navigator.userAgent)
+    // 已 ready → 即刻清 fallback hint, 唔 schedule timer
+    if (hand.isReady) {
+      setShowFallbackHint(false)
+      if (fallbackTimerRef.current !== null) {
+        window.clearTimeout(fallbackTimerRef.current)
+        fallbackTimerRef.current = null
+      }
+      return
+    }
+    if (!showWebcam || isIpadLike || aacMode) {
+      setShowFallbackHint(false)
+      if (fallbackTimerRef.current !== null) {
+        window.clearTimeout(fallbackTimerRef.current)
+        fallbackTimerRef.current = null
+      }
+      return
+    }
+    // Start 5s timer
+    fallbackTimerRef.current = window.setTimeout(() => {
+      setShowFallbackHint(true)
+    }, HAND_INIT_FALLBACK_MS)
+    return () => {
+      if (fallbackTimerRef.current !== null) {
+        window.clearTimeout(fallbackTimerRef.current)
+        fallbackTimerRef.current = null
+      }
+    }
+  }, [showWebcam, aacMode, hand.isReady])
 
   const handleTtsToggle = useCallback(() => {
     setTtsOnState((on) => {

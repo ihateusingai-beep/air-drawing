@@ -26,16 +26,18 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],
-      // v3.0.7.6: Wave 1 範圍 (memory rule 14: actual - 3pp floor)
+      // v3.0.7.6 + v3.0.8.1: Wave 1 範圍 (memory rule 14: actual - 3pp floor)
       // 2026-07-21 actual baseline:
       //   Lines: 16.80%, Functions: 18.75%, Statements: 15.95%, Branches: 11.96%
+      // 2026-07-21 post-audit (useAACPreference test):
+      //   Lines: 18.10%, Functions: 21.85%, Statements: 17.39%, Branches: 12.71%
       // Floor = actual - 3pp (memory rule 14,唔係 target)
-      // 隨住 test 增加, floor 同步上調(下個 sprint re-measure 寫死新 floor)
+      // 隨住 test 增加, floor 同步上調
       thresholds: {
-        lines: 13.8,
-        functions: 15.75,
-        branches: 8.96,
-        statements: 12.95,
+        lines: 15.1,
+        functions: 18.85,
+        branches: 9.71,
+        statements: 14.39,
       },
       include: ['src/lib/**', 'src/services/**', 'src/hooks/**', 'src/constants/**', 'src/store/**'],
       exclude: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/types.ts', 'src/test/**'],
