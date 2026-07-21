@@ -21,20 +21,16 @@
     <meta name="apple-mobile-web-app-title" content="魔法畫筆" />
     <meta name="mobile-web-app-capable" content="yes" />
     <!--
-      Content-Security-Policy (R27 智障私隱 — 0 上傳硬保險)
-      - default-src 'self': 只 load 同源 resource
-      - script-src 'self' + 'unsafe-inline' + 'unsafe-eval': Tailwind CDN 需要 unsafe-inline
-        (Phase 4 改 vite plugin 之後可移除 unsafe-inline)
-      - style-src 'self' + 'unsafe-inline': Tailwind JIT 需要
-      - img-src 'self' + data: + blob:
-      - media-src 'self' + blob: (WebRTC 需要)
-      - connect-src 'self': 0 上傳,任何 fetch / XHR 只到同源
-      - worker-src 'self': Service Worker
-      - object-src 'none': 禁 Flash 之類 plugin
+      Content-Security-Policy (R27 智障私隱 — 0 user data 上傳硬保險)
+      v3.0.7.2: 加 MediaPipe 官方 CDN (jsdelivr WASM + storage.googleapis.com model)
+      - 仍然 0 user data 上傳: 冇 analytics, 冇 telemetry, 冇雲端 sync
+      - MediaPipe Hand/Pose 嘅 model + WASM 係公開 ML model, 唔含 user data
+      - PLAN §4b 原本就允許 cdn.jsdelivr.net (Phase 4b 歸零 spec 之前嘅暫時措施)
+      - tailwindcss 同 jsdelivr 同 storage googleapis 全部加晒入 connect-src / script-src / worker-src
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com https://storage.googleapis.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; worker-src 'self' https://cdn.jsdelivr.net blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>AI 魔法空中畫筆 · Non-verbal 表達輔具</title>
     <!--

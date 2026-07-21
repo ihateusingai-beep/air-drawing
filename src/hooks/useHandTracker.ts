@@ -126,17 +126,30 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
         )
         if (cancelled) return
         // eslint-disable-next-line no-console
-        console.log('[useHandTracker] init: WASM loaded, creating HandLandmarker (delegate=CPU)...')
+        console.log('[useHandTracker] init: WASM loaded, fetching model buffer...')
 
-        const modelAssetPath =
-          modelComplexity === 0
-            ? 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
-            : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+        // v3.0.7.2 fix: 用 createFromModelBuffer 取代 createFromOptions({modelAssetPath})
+        // 原因: modelAssetPath 由 HandLandmarker 內部 fetch, 拋錯時 stack trace 冇真正 root cause
+        // (e.g. CORS, network, FP16 NEON miss), 容易 generic 'Failed to init'
+        // 先 fetch → ArrayBuffer → buffer 傳入, 任何 fetch 錯都 catch 到真正 message
+        const modelUrl =
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+        const modelResp = await fetch(modelUrl, { mode: 'cors' })
+        if (!modelResp.ok) {
+          throw new Error(`Model fetch HTTP ${modelResp.status}: ${modelResp.statusText}`)
+        }
+        const modelArrayBuffer = await modelResp.arrayBuffer()
+        // MediaPipe TypeScript types want Uint8Array, not ArrayBuffer
+        const modelBuffer = new Uint8Array(modelArrayBuffer)
+        if (cancelled) return
+        // eslint-disable-next-line no-console
+        console.log(
+          `[useHandTracker] init: model buffer loaded (${(modelBuffer.byteLength / 1024).toFixed(0)} KB), creating HandLandmarker...`,
+        )
 
         // v3.0.7 fix: 用 CPU delegate (GPU delegate 喺 Mac Safari + 部分 Chromium 唔穩, init 拋 generic error)
-        // Performance 仍然可接受(hand_landmarker.float16 ~3MB, 30fps 偵測)
         const landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath, delegate: 'CPU' },
+          baseOptions: { modelAssetBuffer: modelBuffer, delegate: 'CPU' },
           runningMode: 'VIDEO',
           numHands,
           minHandDetectionConfidence,
