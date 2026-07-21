@@ -28,6 +28,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { WeakModeShell } from './components/WeakModeShell'
+import { MidModeShell } from './components/MidModeShell'
 import { HighModeShell } from './components/HighModeShell'
 import { ProfileSwitcher } from './components/ProfileSwitcher'
 import { InstallBanner } from './components/InstallBanner'
@@ -166,32 +167,8 @@ function ModeEntry({
   )
 }
 
-// Inline MidModeShell stub(Phase 3 將加 MediaPipe Pose)
-function MidModeShell({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h1 className="text-lg font-semibold">🟡 中級模式 (Mid / Intermediate)</h1>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
-        >
-          ← 返模式選擇
-        </button>
-      </header>
-      <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 3 將加:</p>
-        <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
-          <li>MediaPipe Pose (33 keypoints)</li>
-          <li>8 個 rule-based 動作 classifier (坐姿 friendly)</li>
-          <li>Pose-prompt overlay (「請舉高雙手」)</li>
-          <li>TTS 觸發語音 + 動作 log</li>
-        </ul>
-      </main>
-    </div>
-  )
-}
+// Inline MidModeShell stub 已由 src/components/MidModeShell.tsx 取代
+// (Phase 3 batch 3A — R23/R24 fix: MediaPipe Pose + 8 動作 classifier + pose-prompt)
 
 function App() {
   const [mode, setMode] = useState<Mode | null>(null)
