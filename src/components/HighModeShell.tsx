@@ -129,10 +129,14 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
     drawingCanvasHandleRef.current?.clear()
   }, [])
 
+  // v3.0.8.5: webcamError state (之前 silently 失敗, user 唔知點解)
+  const [webcamError, setWebcamError] = useState<string | null>(null)
+
   const handleWebcamToggle = useCallback(async () => {
-    await ensureAudioContext()
+    try { await ensureAudioContext() } catch { /* ignore */ }
     if (!showWebcam) {
       try {
+        setWebcamError(null)
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: 640, height: 480 },
           audio: false,
@@ -142,8 +146,9 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
           await webcamRef.current.play()
         }
         setShowWebcam(true)
-      } catch {
-        // BUG 10:showLoadError pattern
+      } catch (err) {
+        // v3.0.8.5 fix: setWebcamError 之前 silently 失敗
+        setWebcamError(err instanceof Error ? err.message: '無法啟動鏡頭')
         setShowWebcam(false)
       }
     } else {
@@ -228,6 +233,11 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
           >
             {showWebcam ? '🟢 鏡頭 ON' : '🔴 鏡頭 OFF'}
           </button>
+          {webcamError && (
+            <span className="text-xs text-rose-400" role="alert">
+              ⚠️ {webcamError}
+            </span>
+          )}
           <button
             type="button"
             onClick={onExit}

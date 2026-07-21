@@ -33,17 +33,23 @@ export function WeakModeStatus({
             ? `👆 將手指 / 滑鼠停留喺一個表情 ${(dwellTimeMs / 1000).toFixed(1)} 秒, 或者直接 click`
             : `🖱️ 將滑鼠停留喺一個表情 ${(dwellTimeMs / 1000).toFixed(1)} 秒, 或者直接 click`}
       </p>
-      {showWebcam && (
-        <p className="text-xs text-slate-500 mt-1" aria-live="polite">
-          {webcamError
-            ? `⚠️ ${webcamError}`
-            : hand.error
-              ? `⚠️ 手指偵測錯誤: ${hand.error}`
-              : hand.isReady
-                ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指, 見到 👆 跟住你'
-                : '⌛ 手指偵測啟動中…(首次需下載 MediaPipe model, 約 5-10 秒)'}
-        </p>
-      )}
+      {/*
+        v3.0.8.5 fix: 錯誤信息獨立 render, 唔需要 showWebcam
+        之前: webcamError set 但 showWebcam=false → block 唔 render → user 見唔到錯誤
+        改: webcamError / hand.error 永遠 render
+            鏡頭狀態 (isReady / loading) 只 render 喺 showWebcam 期間
+      */}
+      <p className="text-xs text-slate-500 mt-1" aria-live="polite">
+        {webcamError ? (
+          <span className="text-rose-400">⚠️ {webcamError}</span>
+        ) : hand.error ? (
+          <span className="text-rose-400">⚠️ 手指偵測錯誤: {hand.error}</span>
+        ) : showWebcam ? (
+          hand.isReady
+            ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指, 見到 👆 跟住你'
+            : '⌛ 手指偵測啟動中…(首次需下載 MediaPipe model, 約 5-10 秒)'
+        ) : null}
+      </p>
     </div>
   )
 }
