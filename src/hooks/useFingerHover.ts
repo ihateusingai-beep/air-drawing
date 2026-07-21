@@ -68,8 +68,11 @@ function detectIpadTouchOnly(): boolean {
 }
 
 export function useDwellClick(options: UseDwellClickOptions = {}): UseDwellClickResult {
-  const dwellTimeMs = options.dwellTimeMs ?? 500
-  const cooldownMs = options.cooldownMs ?? 300
+  // v3.0.7.4: default dwell 由 500 → 1500ms, 配合 TTS 中文句子 1.5-2.5s 完整讀完
+  // 原本 500ms 太快, TTS 句未讀完 mouse 移走又移返會再 trigger
+  // User 仍然可經 profile.dwellTimeMs override
+  const dwellTimeMs = options.dwellTimeMs ?? 1500
+  const cooldownMs = options.cooldownMs ?? 1000
   const onTrigger = options.onTrigger
 
   const [hoveredId, setHoveredId] = useState<string | null>(null)

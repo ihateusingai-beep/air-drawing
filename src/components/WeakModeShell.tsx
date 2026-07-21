@@ -24,7 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EMOTIONS_BY_ID, GRID_LAYOUT, SKIP_CELL, type Emotion, type EmotionId } from '../constants/emotions'
-import { speak, stopTts, isTtsSupported, preloadVoices, setTtsEnabled, getTtsEnabled } from '../services/tts'
+import { speak, stopTts, isTtsSupported, preloadVoices, setTtsEnabled, getTtsEnabled, isTtsSpeaking } from '../services/tts'
 import { useDwellClick } from '../hooks/useFingerHover'
 import { useHandTracker, useFingerHoverOnElement } from '../hooks/useHandTracker'
 import { useProfileStore } from '../store/profileStore'
@@ -42,6 +42,12 @@ interface EmotionClickLog {
 }
 
 const STORAGE_KEY = 'air-drawing:weak-mode-log'
+
+// v3.0.7.4: per-chip trigger cooldown 2 秒, 阻擋 finger / mouse 連續 re-trigger
+// 原本 useDwellClick / useFingerHoverOnElement 內部都各自有 300ms cooldown
+// 但 finger 個 raf 觸發 + 食指停留期間可 N 次 re-trigger 同一 chip
+// 2 秒 > 0.5s dwell + 1.5s TTS 句子, 確保 TTS 完整讀完先可再揀
+const TRIGGER_COOLDOWN_MS = 2000
 
 function readLog(): EmotionClickLog[] {
   try {
@@ -73,6 +79,8 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const [clickCount, setClickCount] = useState(0)
   // v3.0.7.3: trigger celebration overlay state — 控制 affirmation modal 顯示時間
   const [celebration, setCelebration] = useState<{ emotion: Emotion; key: number } | null>(null)
+  // v3.0.7.4: per-chip last trigger timestamp, handleTrigger 入面 check 防連續 re-trigger
+  const lastTriggerTimeRef = useRef<Record<string, number>>({})
 
   // R36 緩解 + Bug 3 fix: webcam optional, default opacity 30%(原本 0 過火完全隱形)
   const [showWebcam, setShowWebcam] = useState(false)
@@ -84,7 +92,9 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const activeProfile = useProfileStore((s) =>
     s.profiles.find((p) => p.id === s.activeProfileId),
   )
-  const dwellTimeMs = activeProfile?.dwellTimeMs ?? 500
+  // v3.0.7.4: default 500 → 1500 配合 TTS 中文句子完整讀完
+  // 0.5s 太短, TTS 句未讀完 user 已 trigger 下一個
+  const dwellTimeMs = activeProfile?.dwellTimeMs ?? 1500
 
   // Preload voices on mount (R33 iOS PWA 緩解)
   useEffect(() => {
@@ -100,9 +110,23 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
 
   const handleTrigger = useCallback(
     (id: string, source: 'mouse-dwell' | 'touch-click' | 'mouse-click' | 'finger-hover') => {
+      // v3.0.7.4: per-chip 2 秒 cooldown, 防 finger / mouse 連續 trigger 同一個
+      // finger dwell trigger 完 setHoveredId(null) 後, 下 1 個 frame tip 仲喺 chip 會 re-trigger
+      const now = Date.now()
+      const last = lastTriggerTimeRef.current[id] ?? 0
+      if (now - last < TRIGGER_COOLDOWN_MS) {
+        return
+      }
+      // v3.0.7.4: TTS 仲讀緊 → skip, 等 TTS 讀完先接受新 trigger
+      // 防止「揀 A → TTS 讀 A → user 揀 A 太快 → TTS cancel 再讀 A」無限循環
+      if (ttsOn && isTtsSpeaking()) {
+        return
+      }
+      lastTriggerTimeRef.current[id] = now
+
       if (id === SKIP_CELL.id) {
         // Skip cell — silent, just record
-        appendLog({ ts: Date.now(), emotionId: 'skip', source })
+        appendLog({ ts: now, emotionId: 'skip', source })
         setLastClicked('skip')
         return
       }
@@ -116,12 +140,12 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       // v3.0.7.3: trigger celebration modal — 吸引學生更多互動
       // 用 setTimeout 0 確保 React 先 render trigger-flash 完, 然後 modal
       setTimeout(() => {
-        setCelebration({ emotion, key: Date.now() })
+        setCelebration({ emotion, key: now })
         // 1.5s 後自動消失
         setTimeout(() => setCelebration(null), 1500)
       }, 200)
       // Log
-      appendLog({ ts: Date.now(), emotionId: emotion.id, source })
+      appendLog({ ts: now, emotionId: emotion.id, source })
     },
     [ttsOn],
   )
@@ -433,11 +457,12 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           </div>
 
           {/*
-            Finger cursor overlay(v3.0.7 新加, Bug 4 debug + UX)
-            圓點跟食指 normalized coord, mirror flip 修正同 webcam
-            只喺 hand ready + 食指偵測到先顯示
-            同 webcam 同一個 container, 因為 elementFromPoint 用 video.getBoundingClientRect
-            計 screenX, 呢個 overlay 獨立 layer 唔影響 elementFromPoint
+            Finger cursor overlay(v3.0.7 新加, v3.0.7.4 加強)
+            - 加大粒 (w-10 h-10)
+            - 3 層 ring: 內核 + ping 動畫 + 外圈 glow shadow
+            - 食指 emoji 👆 喺圓點上面, 清楚表示「呢個就係你食指」
+            - mirror flip 同 webcam 一致
+            - pointer-events-none 唔阻擋 elementFromPoint (browser 仍命中下層 chip)
           */}
           {hand.isReady && hand.indexFingerTip && showWebcam && webcamRef.current && (() => {
             const v = webcamRef.current
@@ -455,9 +480,15 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                 }}
                 aria-hidden="true"
               >
-                <div className="relative">
-                  <div className="w-6 h-6 rounded-full bg-amber-400 border-4 border-white shadow-2xl animate-ping absolute inset-0 opacity-60" />
-                  <div className="w-6 h-6 rounded-full bg-amber-400 border-4 border-white shadow-2xl relative" />
+                <div className="relative w-12 h-12 flex items-center justify-center">
+                  {/* Outer glow ring */}
+                  <div className="absolute inset-0 rounded-full bg-amber-400/20 blur-xl" />
+                  {/* Ping animation ring (擴散效果) */}
+                  <div className="absolute inset-0 rounded-full bg-amber-400/50 animate-ping" />
+                  {/* Solid core (大粒) */}
+                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 border-[3px] border-white shadow-2xl flex items-center justify-center">
+                    <span className="text-lg leading-none">👆</span>
+                  </div>
                 </div>
               </div>
             )
@@ -550,15 +581,15 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           )}
         </div>
 
-        {/* Live feedback strip */}
+        {/* Live feedback strip — v3.0.7.4: 隱藏有 celebration 期間, 避免 trigger-flash + modal + strip triple layer */}
         <div
           className="min-h-[3rem] flex items-center justify-center shrink-0"
           aria-live="polite"
           aria-atomic="true"
         >
-          {lastClicked && lastClicked !== 'skip' && (
+          {!celebration && lastClicked && lastClicked !== 'skip' && (
             <div
-              className="px-4 py-2 rounded-full text-sm font-semibold shadow-lg"
+              className="px-4 py-2 rounded-full text-sm font-semibold shadow-lg animate-feedback-fade-in"
               style={{
                 backgroundColor: EMOTIONS_BY_ID[lastClicked].hexSoft,
                 color: EMOTIONS_BY_ID[lastClicked].hex,
@@ -569,7 +600,7 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
               {EMOTIONS_BY_ID[lastClicked].labelEn}
             </div>
           )}
-          {lastClicked === 'skip' && (
+          {!celebration && lastClicked === 'skip' && (
             <div className="px-4 py-2 rounded-full text-sm text-slate-400 bg-slate-800">
               已跳過
             </div>

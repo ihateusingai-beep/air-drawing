@@ -137,3 +137,19 @@ body {
 .animate-celebration-particle {
   animation: celebration-particle 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
+
+/* v3.0.7.4: feedback strip 出現時 fade in (celebration 結束後接住出現) */
+@keyframes feedback-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-feedback-fade-in {
+  animation: feedback-fade-in 0.4s ease-out;
+}

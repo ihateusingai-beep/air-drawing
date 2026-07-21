@@ -129,5 +129,18 @@ export function speak(text: string, options: SpeakOptions = {}): void {
 /** Stop any current TTS */
 export function stopTts(): void {
   const synth = getSynthesis()
-  if (synth) synth.cancel()
+  if (!synth) return
+  try {
+    synth.cancel()
+  } catch {
+    /* silent */
+  }
 }
+
+/** v3.0.7.4: 查詢 TTS 係咪仍讀緊(包括 pending queue) */
+export function isTtsSpeaking(): boolean {
+  const synth = getSynthesis()
+  if (!synth) return false
+  return synth.speaking || synth.pending
+}
+

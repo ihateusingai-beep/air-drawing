@@ -56,11 +56,15 @@ export function generateRandomId(): string {
   return id
 }
 
-/** Dwell time bounds (R40 — 0.3-1.0s safe range) */
-export const DWELL_TIME_MIN_MS = 300
-export const DWELL_TIME_MAX_MS = 1000
-export const DWELL_TIME_DEFAULT_MS = 500
-export const DWELL_TIME_STEP_MS = 50
+/**
+ * Dwell time bounds (R40 — 原本 0.3-1.0s, v3.0.7.4 改 0.5-2.5s)
+ * TTS 中文一句 1.5-2.5s, 0.5-1.0s 太短, TTS 句未讀完會 trigger 過
+ * Max 2.5s 等 TTS 完整讀完, Min 0.5s 防誤觸
+ */
+export const DWELL_TIME_MIN_MS = 500
+export const DWELL_TIME_MAX_MS = 2500
+export const DWELL_TIME_DEFAULT_MS = 1500
+export const DWELL_TIME_STEP_MS = 100
 
 /** Clamp dwell time 落 safe range */
 export function clampDwellTimeMs(ms: number): number {
@@ -70,8 +74,8 @@ export function clampDwellTimeMs(ms: number): number {
 /** Detect 過低 / 過高 warning level(對應 plan §12.2 預設建議) */
 export function dwellWarningLevel(ms: number): 'fast' | 'slow' | null {
   if (ms < DWELL_TIME_MIN_MS || ms > DWELL_TIME_MAX_MS) return null
-  if (ms < 400) return 'fast' // 智障 / ASD 學生 fast
-  if (ms > 800) return 'slow' // 防誤觸
+  if (ms < 800) return 'fast' // <0.8s 可能 TTS 未讀完
+  if (ms > 2000) return 'slow' // >2s 對 fast learner 太慢
   return null
 }
 
