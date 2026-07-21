@@ -1,24 +1,30 @@
 /**
- * Air Drawing — Phase 1 scaffold
+ * Air Drawing — Phase 2 Step 6 (Weak mode 完整)
  *
  * Plan: PLAN.md §12 (v2.0 — 3-tier accessibility)
- * Roadmap: ROADMAP.md Phase 1
+ * Roadmap: ROADMAP.md Phase 2 Step 6
  *
- * This file provides:
+ * Step 6 ships:
  *  - F24 Mode entry router (3 chips: 弱/中/強)
- *  - F26 Per-mode UI shell stubs (Weak / Mid / High)
- *  - F23 Finger dwell-click hook stub
+ *  - F26 WeakModeShell 完整實裝:
+ *      C1 Plutchik 8 emotion vocabulary (constants/emotions.ts)
+ *      E18 TTS service (services/tts.ts)
+ *      F23 Finger dwell-click (hooks/useFingerHover.ts)
+ *      8 chip 3×3 grid + 1 skip(Proloquo2Go 對標)
+ *  - F26 Mid / High mode shell stub(Phase 2 / 3 實裝)
  *  - AAC default (camera optional)
- *  - Cross-device baseline: viewport, 100dvh, matchMedia pointer detection
+ *  - Cross-device baseline: viewport, 100dvh, iPad auto-detect
  *
- * Phase 2 將加: Plutchik 8 emotion constants, 多 profile, PIN 鎖, TTS,
- *                完整 finger dwell-click algorithm, MediaPipe Hands + Pose.
- *
- * 完整 source body (MediaPipe AI 追蹤、Canvas 畫圖、Audio engine) 延到 Phase 2
- * 拆 `<DrawingCanvas>` step。
+ * Phase 2 Step 6.x (todo):
+ *  - C2 MediaPipe Pose + 8 動作 classifier (mid mode)
+ *  - High mode 1:1 行為完整實裝
+ *  - E6 多 profile (亂數 ID + 加密)
+ *  - E7 PIN 鎖
+ *  - E4 「今日感覺」prompt
  */
 
 import { useEffect, useState, useCallback } from 'react'
+import { WeakModeShell } from './components/WeakModeShell'
 
 // ────────────────────────────────────────────────────────────────────
 // F24: Mode enum
@@ -68,61 +74,7 @@ const MODES: Array<{
 ]
 
 // ────────────────────────────────────────────────────────────────────
-// F23: Finger dwell-click hook stub
-// Phase 2 將完整實裝 (MediaPipe Hands 食指追蹤 + 0.5s dwell trigger)
-// ────────────────────────────────────────────────────────────────────
-interface UseDwellClickStub {
-  /** 當前 hover 緊嘅 element id (stub: 永遠 null) */
-  hoveredId: string | null
-  /** Dwell progress 0-1 (stub: 永遠 0) */
-  progress: number
-  /** Trigger click programmatically (stub: 唔做嘢) */
-  triggerClick: (id: string) => void
-}
-
-function useDwellClickStub(_dwellTimeMs: number = 500): UseDwellClickStub {
-  return {
-    hoveredId: null,
-    progress: 0,
-    triggerClick: () => {
-      /* Phase 2 實裝 */
-    },
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// F26: Weak mode shell (🟢)
-// Phase 2 將加 8 個 Plutchik chip + TTS + emotion log
-// ────────────────────────────────────────────────────────────────────
-function WeakModeShell({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h1 className="text-lg font-semibold">🟢 輕鬆模式 (Low / Beginner)</h1>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
-        >
-          ← 返模式選擇
-        </button>
-      </header>
-      <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 1 stub — Phase 2 將加:</p>
-        <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
-          <li>Plutchik 8 情緒 chip (3×3 grid, 200×200pt)</li>
-          <li>Finger dwell-click (MediaPipe Hands 食指追蹤)</li>
-          <li>TTS 語音 (Web Speech API)</li>
-          <li>Emotion log (IndexedDB)</li>
-        </ul>
-      </main>
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-// F26: Mid mode shell (🟡)
-// Phase 2 將加 MediaPipe Pose + 8 動作 classifier
+// F26: Mid mode shell (🟡) — Phase 3 將加 MediaPipe Pose
 // ────────────────────────────────────────────────────────────────────
 function MidModeShell({ onExit }: { onExit: () => void }) {
   return (
@@ -138,7 +90,7 @@ function MidModeShell({ onExit }: { onExit: () => void }) {
         </button>
       </header>
       <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 1 stub — Phase 2 將加:</p>
+        <p className="text-slate-300 text-sm">Phase 2 stub — Phase 3 將加:</p>
         <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
           <li>MediaPipe Pose (33 keypoints)</li>
           <li>8 個 rule-based 動作 classifier (坐姿 friendly)</li>
@@ -151,7 +103,7 @@ function MidModeShell({ onExit }: { onExit: () => void }) {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// F26: High mode shell (🔴) — Phase 1 stub,完整 source 1:1 行為延到 Phase 2
+// F26: High mode shell (🔴) — Phase 2/3 將加 source 1:1 行為
 // ────────────────────────────────────────────────────────────────────
 function HighModeShell({ onExit }: { onExit: () => void }) {
   return (
@@ -167,7 +119,7 @@ function HighModeShell({ onExit }: { onExit: () => void }) {
         </button>
       </header>
       <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 1 stub — Phase 2-3 將加:</p>
+        <p className="text-slate-300 text-sm">Phase 2 stub — Phase 3 將加:</p>
         <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
           <li>鏡頭 + MediaPipe Hands 食指 AI 畫畫</li>
           <li>Canvas 畫圖 (smoothing + mirror)</li>
@@ -263,8 +215,6 @@ function ModeEntry({
 function App() {
   const [mode, setMode] = useState<Mode>(null)
   const [lastMode, setLastMode] = useState<Exclude<Mode, null> | null>(null)
-  // F23 stub (Phase 2 將用真正 dwell-click)
-  useDwellClickStub(500)
 
   // Persist last mode to localStorage
   useEffect(() => {
@@ -280,18 +230,15 @@ function App() {
     }
   }, [])
 
-  const pickMode = useCallback(
-    (m: Exclude<Mode, null>) => {
-      setMode(m)
-      setLastMode(m)
-      try {
-        localStorage.setItem('air-drawing:lastMode', m)
-      } catch {
-        /* ignore */
-      }
-    },
-    [],
-  )
+  const pickMode = useCallback((m: Exclude<Mode, null>) => {
+    setMode(m)
+    setLastMode(m)
+    try {
+      localStorage.setItem('air-drawing:lastMode', m)
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const exitToEntry = useCallback(() => setMode(null), [])
 
