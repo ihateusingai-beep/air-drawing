@@ -15,6 +15,8 @@ import { VitePWA } from 'vite-plugin-pwa'
  * 對標 R14 / R21 / R27 緩解。
  */
 export default defineConfig({
+  // GitHub Pages project site: https://ihateusingai-beep.github.io/air-drawing/
+  base: '/air-drawing/',
   plugins: [
     react(),
     VitePWA({
