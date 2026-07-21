@@ -53,13 +53,15 @@ export async function previewPrune(
   const cutoff = pruneCutoff(days, now)
   const all = await getEmotionLogs(profileId, Number.MAX_SAFE_INTEGER)
   const old = all.filter((r: EmotionLogRecord) => r.ts < cutoff)
-  const remaining = all.length - old.length
-  const oldestTs = all.length > 0 ? Math.min(...all.map((r) => r.ts)) : null
+  const remaining = all.filter((r: EmotionLogRecord) => r.ts >= cutoff)
+  // Oldest REMAINING entry (i.e. smallest ts 仍然 >= cutoff)
+  // 用嚟 telemetry / debug 顯示保留範圍
+  const oldestTs = remaining.length > 0 ? Math.min(...remaining.map((r) => r.ts)) : null
   return {
     profileId,
     prunedCount: old.length,
-    remainingCount: remaining,
-    oldestTs: oldestTs !== null && oldestTs >= cutoff ? oldestTs : null,
+    remainingCount: remaining.length,
+    oldestTs,
   }
 }
 
