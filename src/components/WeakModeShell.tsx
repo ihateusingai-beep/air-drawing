@@ -71,6 +71,8 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const [ttsOn, setTtsOnState] = useState(getTtsEnabled())
   const [lastClicked, setLastClicked] = useState<EmotionId | 'skip' | null>(null)
   const [clickCount, setClickCount] = useState(0)
+  // v3.0.7.3: trigger celebration overlay state — 控制 affirmation modal 顯示時間
+  const [celebration, setCelebration] = useState<{ emotion: Emotion; key: number } | null>(null)
 
   // R36 緩解 + Bug 3 fix: webcam optional, default opacity 30%(原本 0 過火完全隱形)
   const [showWebcam, setShowWebcam] = useState(false)
@@ -111,6 +113,13 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       // Visual feedback
       setLastClicked(emotion.id)
       setClickCount((c) => c + 1)
+      // v3.0.7.3: trigger celebration modal — 吸引學生更多互動
+      // 用 setTimeout 0 確保 React 先 render trigger-flash 完, 然後 modal
+      setTimeout(() => {
+        setCelebration({ emotion, key: Date.now() })
+        // 1.5s 後自動消失
+        setTimeout(() => setCelebration(null), 1500)
+      }, 200)
       // Log
       appendLog({ ts: Date.now(), emotionId: emotion.id, source })
     },
@@ -470,6 +479,53 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
               />
             )
           })()}
+
+          {/*
+            v3.0.7.3: Trigger celebration modal — 吸引更多互動
+            200ms 後出現(等 trigger-flash 跑先), 顯示 1.5s 自動消失
+            - 中央大 emoji + 「你揀咗 XXX」+ emotion color 背景
+            - 8 個 particle burst 從中央散出
+            - pointer-events-none 唔阻擋下一個 click
+          */}
+          {celebration && (
+            <div
+              key={celebration.key}
+              className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none animate-celebration-pop"
+              aria-hidden="true"
+            >
+              {/* Modal: emoji + label */}
+              <div
+                className="px-8 py-6 rounded-3xl shadow-2xl border-4 border-white/40 text-center animate-celebration-scale"
+                style={{
+                  backgroundColor: celebration.emotion.hexSoft,
+                  color: celebration.emotion.hex,
+                }}
+              >
+                <div className="text-9xl leading-none mb-2">{celebration.emotion.emoji}</div>
+                <div className="text-2xl font-bold">{celebration.emotion.labelZh}</div>
+                <div className="text-sm opacity-80 mt-1">{celebration.emotion.labelEn}</div>
+              </div>
+              {/* Particle burst: 8 個小圓點從中央散出 */}
+              {Array.from({ length: 8 }).map((_, i) => {
+                const angle = (i / 8) * Math.PI * 2
+                const distance = 180 // px
+                const tx = Math.cos(angle) * distance
+                const ty = Math.sin(angle) * distance
+                return (
+                  <div
+                    key={i}
+                    className="absolute w-4 h-4 rounded-full animate-celebration-particle"
+                    style={{
+                      backgroundColor: celebration.emotion.hex,
+                      '--tx': `${tx}px`,
+                      '--ty': `${ty}px`,
+                      boxShadow: `0 0 12px ${celebration.emotion.hex}`,
+                    } as React.CSSProperties}
+                  />
+                )
+              })}
+            </div>
+          )}
 
           {/* R36: webcam opacity slider (only when webcam on) */}
           {showWebcam && (
