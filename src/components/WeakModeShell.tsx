@@ -30,6 +30,7 @@ import { speak, stopTts, preloadVoices, setTtsEnabled, getTtsEnabled, isTtsSpeak
 import { useDwellClick } from '../hooks/useFingerHover'
 import { useHandTracker, useFingerHoverOnElement } from '../hooks/useHandTracker'
 import { useAACPreference } from '../hooks/useAACPreference'
+import { useEmotionLog } from '../hooks/useEmotionLog'
 import { useProfileStore } from '../store/profileStore'
 import { usePageVisibility } from '../hooks/usePageVisibility'
 import {
@@ -41,6 +42,7 @@ import {
   WeakModeCelebration,
   WeakModeFooter,
 } from './WeakMode'
+import { EmotionJournal } from './EmotionJournal'
 
 interface WeakModeShellProps {
   onExit: () => void
@@ -107,6 +109,8 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const [showWebcam, setShowWebcam] = useState(false)
   const [webcamOpacity, setWebcamOpacity] = useState(30)
   const [webcamError, setWebcamError] = useState<string | null>(null)
+  // Sprint 76 F1: 情緒週報 modal toggle
+  const [journalOpen, setJournalOpen] = useState(false)
   const webcamRef = useRef<HTMLVideoElement | null>(null)
 
   // v3.0.7.6 (UX-3): E22 AAC mode — 純 click, 隱藏鏡頭
@@ -120,6 +124,11 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
     s.profiles.find((p) => p.id === s.activeProfileId),
   )
   const dwellTimeMs = activeProfile?.dwellTimeMs ?? 1500
+
+  // Sprint 76 F1: 情緒日記 — 自動 log emotion 落 IndexedDB
+  // 5s dedup per (profile, emotion, source) — 防 spam
+  // profileId undefined 時 silent no-op
+  const emotionLog = useEmotionLog({ profileId: activeProfile?.id })
 
   // Gate 1 F1 fix (commit 41a1fc5): 切 profile 清 state, 防 cross-profile leak
   useEffect(() => {
@@ -160,6 +169,11 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       if (ttsOn) speak(emotion.ttsText, { lang: 'zh-Hant' })
       setLastClicked(emotion.id)
       setClickCount((c) => c + 1)
+
+      // v3.0.8.7.4 (Sprint 76 F1): 自動 log emotion 入 journal
+      // 5s dedup 喺 useEmotionLog 入面 (memory rule 10)
+      // source 用 mouse-dwell / finger-hover, 唔會 spam 同一 chip
+      void emotionLog.log(emotion.id, source === 'finger-hover' ? 'mouse-dwell' : source)
 
       // 攞 trigger chip screen position
       let chipRect: { x: number; y: number } | null = null
@@ -337,6 +351,19 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       />
 
       <main className="flex-1 min-h-0 flex flex-col items-stretch justify-center p-3 sm:p-4 gap-3 relative">
+        {/* Sprint 76 F1: 情緒週報 button (右上角 floating, 唔阻 chip click)
+            Memory rule 14 a11y: 44px touch target + aria-label
+        */}
+        {activeProfile && (
+          <button
+            type="button"
+            onClick={() => setJournalOpen(true)}
+            aria-label="開啟情緒週報"
+            className="absolute top-3 right-3 z-30 px-4 py-3 min-h-[44px] rounded-full bg-amber-500/90 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-lg active:scale-95 transition flex items-center gap-2"
+          >
+            📊 情緒週報
+          </button>
+        )}
         <WeakModeStatus
           isIpad={isIpad}
           showWebcam={showWebcamUI}
@@ -403,6 +430,14 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
         fingerDetectionActive={showWebcamUI && hand.isReady}
         clickCount={clickCount}
       />
+
+      {/* Sprint 76 F1: 情緒週報 modal */}
+      {journalOpen && activeProfile && (
+        <EmotionJournal
+          profileId={activeProfile.id}
+          onClose={() => setJournalOpen(false)}
+        />
+      )}
     </div>
   )
 }
