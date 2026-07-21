@@ -52,3 +52,28 @@ body {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/*
+ * v3.0.7: emotion 表達動畫 (Bug 4 + 用戶要求 animation 協助表達)
+ * - .animate-trigger-flash: 全屏 emotion color flash, 1.2s 衰減
+ * - animate-ping (Tailwind built-in) 已用喺 finger cursor
+ * - animate-pulse (Tailwind built-in) 已用喺 hover chip emoji
+ *
+ * 註: animate-ping 嘅默認 1s cubic-bezier 可能對 ASD 學生太刺激,
+ * 上面 prefers-reduced-motion media query 已經 override 全 animation
+ */
+@keyframes trigger-flash {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-trigger-flash {
+  animation: trigger-flash 1.2s ease-out forwards;
+}

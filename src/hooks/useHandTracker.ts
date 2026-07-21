@@ -88,13 +88,23 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
   const rafRef = useRef<number | null>(null)
   const lastVideoTimeRef = useRef<number>(-1)
   const instanceIdRef = useRef<number>(-1)
+  // v3.0.7 fix: 用 internal state hold video 變化, 因 React ref 唔 trigger re-render
+  // 父組件 initial render 時 video 仍 null, 之後 mount 但 React 唔 re-render, hook 永遠見 null
+  const [videoState, setVideoState] = useState<HTMLVideoElement | null>(video)
 
   if (instanceIdRef.current === -1) {
     instanceIdRef.current = instanceCounter++
   }
 
+  // Sync external video prop to internal state
   useEffect(() => {
-    if (!active || !video) {
+    if (video !== videoState) {
+      setVideoState(video)
+    }
+  }, [video, videoState])
+
+  useEffect(() => {
+    if (!active || !videoState) {
       return
     }
 
@@ -160,27 +170,28 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
       setIsReady(false)
       setLandmarks(null)
     }
-  }, [active, video, modelComplexity, minHandDetectionConfidence, minHandPresenceConfidence, minTrackingConfidence, numHands])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelComplexity 等 defaults stable, videoState 已 sync
+  }, [active, videoState, modelComplexity, minHandDetectionConfidence, minHandPresenceConfidence, minTrackingConfidence, numHands])
 
   useEffect(() => {
-    if (!isReady || !video || !landmarkerRef.current) {
+    if (!isReady || !videoState || !landmarkerRef.current) {
       return
     }
 
     const detectFrame = (): void => {
       const landmarker = landmarkerRef.current
-      if (!landmarker || !video || video.readyState < 2) {
+      if (!landmarker || !videoState || videoState.readyState < 2) {
         rafRef.current = requestAnimationFrame(detectFrame)
         return
       }
-      if (video.currentTime === lastVideoTimeRef.current) {
+      if (videoState.currentTime === lastVideoTimeRef.current) {
         rafRef.current = requestAnimationFrame(detectFrame)
         return
       }
-      lastVideoTimeRef.current = video.currentTime
+      lastVideoTimeRef.current = videoState.currentTime
 
       try {
-        const result: HandLandmarkerResult = landmarker.detectForVideo(video, performance.now())
+        const result: HandLandmarkerResult = landmarker.detectForVideo(videoState, performance.now())
         if (result.landmarks && result.landmarks.length > 0) {
           const hand = result.landmarks[0] as NormalizedHandLandmark[]
           setLandmarks(hand)
@@ -202,7 +213,7 @@ export function useHandTracker(options: UseHandTrackerOptions): UseHandTrackerSt
         rafRef.current = null
       }
     }
-  }, [isReady, video])
+  }, [isReady, videoState])
 
   const indexFingerTip =
     landmarks && landmarks[HAND_LANDMARKS.INDEX_FINGER_TIP]

@@ -266,10 +266,14 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       </header>
 
       {/*
-        Bug 1 fix: <main> 加 min-h-0(flex child 必要, 否則 flex-1 失效, content 縮埋底部)
-        + 內部加 flex flex-col, chip grid 用 flex-1 + overflow-y-auto(細屏可滾)
+        Bug 1 fix (v3.0.7): layout 完全重做
+        - 將 chip grid 嘅 container 改 flex-1 + min-h-0 真正撐大
+        - 加 Finger cursor overlay(絕對定位, 圓點跟食指 normalized coord, 清楚見 detection)
+        - Webcam 變成 fullscreen background layer(同 chip 完全分開), 唔再疊喺 chip container 內
+        - Chip 加 hover scale-110 + emoji animate-pulse, 食指 hover 時有明顯 visual feedback
+        - Trigger 時全屏 emotion color flash
       */}
-      <main className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 sm:p-6 gap-4">
+      <main className="flex-1 min-h-0 flex flex-col items-stretch justify-center p-3 sm:p-4 gap-3 relative">
         <div className="text-center shrink-0">
           <p className="text-slate-300 text-sm sm:text-base">
             {isIpad
@@ -282,18 +286,23 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
             <p className="text-xs text-slate-500 mt-1" aria-live="polite">
               {webcamError
                 ? `⚠️ ${webcamError}`
-                : hand.isReady
-                  ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指'
-                  : '⌛ 手指偵測啟動中…'}
+                : hand.error
+                  ? `⚠️ 手指偵測錯誤: ${hand.error}`
+                  : hand.isReady
+                    ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指, 見到 👆 跟住你'
+                    : '⌛ 手指偵測啟動中…(首次需下載 MediaPipe model, 約 5-10 秒)'}
             </p>
           )}
         </div>
 
-        <div className="relative w-full max-w-4xl shrink-0">
+        {/*
+          Stage: 固定 aspect-ratio 9:12(直向), chip 填滿內部
+          Webcam 變成 stage 嘅 background(同 chip 唔再疊, 避免 z-index/positioning 衝突)
+        */}
+        <div className="relative w-full max-w-3xl mx-auto flex-1 min-h-0 flex flex-col">
           {/*
-            Webcam image layer (Bug 3 fix: opacity 預設 30%, 見到鏡頭)
+            Webcam image layer (full stage background, mirror flip)
             永遠掛喺 DOM, 即使 OFF 都保留 element, 咁 useHandTracker video ref 穩定
-            mirror flip (selfie-style) 喺 CSS
           */}
           <video
             ref={webcamRef}
@@ -308,8 +317,13 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
             aria-hidden="true"
           />
 
+          {/*
+            Chip grid layer: z-index 1, 永遠喺 webcam 之上
+            唔再用 mix-blend-difference(之前令 chip 變怪色)
+            用 auto-rows-fr 確保每 row 平分高度
+          */}
           <div
-            className={`grid grid-cols-3 gap-3 sm:gap-4 relative ${showWebcam && webcamOpacity > 0 ? 'mix-blend-difference' : ''}`}
+            className="relative z-10 grid grid-cols-3 auto-rows-fr gap-2 sm:gap-3 h-full p-2"
             role="grid"
             aria-label="Plutchik 8 情緒選擇"
           >
@@ -330,27 +344,27 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                 data-finger-target={cell.id}
                 className={`
                   group relative
-                  aspect-square
-                  min-h-[250px] sm:min-h-[280px]
-                  p-3 sm:p-4
-                  rounded-3xl
-                  border-4
+                  min-h-[120px] sm:min-h-[160px]
+                  p-2 sm:p-3
+                  rounded-2xl sm:rounded-3xl
+                  border-2 sm:border-4
                   flex flex-col items-center justify-center
-                  transition-transform duration-200
-                  shadow-2xl
+                  transition-all duration-200 ease-out
+                  shadow-xl
                   focus-visible:ring-4 focus-visible:ring-amber-400 focus:outline-none
                   ${isSkip
-                    ? 'bg-slate-800 border-slate-600 text-slate-400'
+                    ? 'bg-slate-800/80 border-slate-600 text-slate-400'
                     : ''
                   }
                   ${!isSkip && isLastClicked ? 'animate-bounce' : ''}
-                  hover:scale-105 active:scale-95
+                  ${isHovered && !isSkip ? 'scale-110 shadow-2xl z-20' : 'hover:scale-105'}
+                  active:scale-95
                 `}
                 style={
                   isSkip
                     ? undefined
                     : {
-                        backgroundColor: cell.hexSoft,
+                        backgroundColor: isHovered ? cell.hex : cell.hexSoft,
                         borderColor: isHovered || isLastClicked ? cell.hex : 'transparent',
                         color: cell.hex,
                       }
@@ -368,13 +382,14 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                     aria-hidden="true"
                   >
                     <rect
-                      x="6"
-                      y="6"
-                      width="calc(100% - 12px)"
-                      height="calc(100% - 12px)"
-                      rx="20"
+                      x="4"
+                      y="4"
+                      width="calc(100% - 8px)"
+                      height="calc(100% - 8px)"
+                      rx="16"
                       fill="none"
-                      stroke={cell.hex}
+                      stroke="white"
+                      strokeOpacity="0.95"
                       strokeWidth="6"
                       strokeDasharray={`${cellProgress * 100} 100`}
                       style={{ pathLength: 100 } as React.CSSProperties}
@@ -383,19 +398,24 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
                 )}
 
                 {/*
-                  Bug 2 fix: emoji text-8xl / sm:text-9xl(原本 text-7xl/sm:text-8xl 太細)
-                  320px (text-8xl) / 384px (text-9xl) emoji size, 視障/長者都見到
+                  Bug 2 fix v3.0.7: emoji text-7xl / sm:text-8xl(原本 text-8xl/9xl 太大撞 chip 邊)
+                  chip 用 flex-1 + auto-rows-fr 後, 高度由 row 控制, 唔再依賴 min-h
+                  留返 text-7xl/8xl 比 emoji 視覺主導, 中英文下面
                 */}
                 <div
-                  className="text-8xl sm:text-9xl mb-1 sm:mb-2 leading-none"
+                  className={`
+                    text-7xl sm:text-8xl leading-none
+                    ${isHovered && !isSkip ? 'animate-pulse' : ''}
+                    transition-transform duration-200
+                  `}
                   aria-hidden="true"
                 >
                   {cell.emoji}
                 </div>
-                <div className="text-base sm:text-lg font-bold leading-tight">
+                <div className="text-sm sm:text-base font-bold leading-tight mt-1">
                   {cell.labelZh}
                 </div>
-                <div className="text-[10px] sm:text-xs opacity-70 leading-tight">
+                <div className="text-[9px] sm:text-[10px] opacity-70 leading-tight hidden sm:block">
                   {cell.labelEn}
                 </div>
               </button>
@@ -403,9 +423,57 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           })}
           </div>
 
+          {/*
+            Finger cursor overlay(v3.0.7 新加, Bug 4 debug + UX)
+            圓點跟食指 normalized coord, mirror flip 修正同 webcam
+            只喺 hand ready + 食指偵測到先顯示
+            同 webcam 同一個 container, 因為 elementFromPoint 用 video.getBoundingClientRect
+            計 screenX, 呢個 overlay 獨立 layer 唔影響 elementFromPoint
+          */}
+          {hand.isReady && hand.indexFingerTip && showWebcam && webcamRef.current && (() => {
+            const v = webcamRef.current
+            const rect = v.getBoundingClientRect()
+            // Mirror flip 同 useFingerHoverOnElement 一致
+            const screenX = (1 - hand.indexFingerTip!.x) * rect.width + rect.left
+            const screenY = hand.indexFingerTip!.y * rect.height + rect.top
+            return (
+              <div
+                className="fixed pointer-events-none z-50"
+                style={{
+                  left: `${screenX}px`,
+                  top: `${screenY}px`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+                aria-hidden="true"
+              >
+                <div className="relative">
+                  <div className="w-6 h-6 rounded-full bg-amber-400 border-4 border-white shadow-2xl animate-ping absolute inset-0 opacity-60" />
+                  <div className="w-6 h-6 rounded-full bg-amber-400 border-4 border-white shadow-2xl relative" />
+                </div>
+              </div>
+            )
+          })()}
+
+          {/*
+            Trigger flash overlay(v3.0.7 新加, 用戶要求 emotion 表達動畫)
+            Trigger 瞬間全屏 flash 該 emotion 嘅色, 1.2s 衰減
+          */}
+          {lastClicked && lastClicked !== 'skip' && (() => {
+            const emotion = EMOTIONS_BY_ID[lastClicked]
+            if (!emotion) return null
+            return (
+              <div
+                key={lastClicked + clickCount}
+                className="fixed inset-0 pointer-events-none z-40 animate-trigger-flash"
+                style={{ backgroundColor: emotion.hex, mixBlendMode: 'screen' }}
+                aria-hidden="true"
+              />
+            )
+          })()}
+
           {/* R36: webcam opacity slider (only when webcam on) */}
           {showWebcam && (
-            <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-400">
+            <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-400 shrink-0">
               <span>👤 鏡頭背景:</span>
               <input
                 type="range"
