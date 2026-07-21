@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { EMOTIONS_BY_ID, GRID_LAYOUT, SKIP_CELL, type EmotionId } from '../constants/emotions'
+import { EMOTIONS_BY_ID, GRID_LAYOUT, SKIP_CELL, MODERATE_EMOTIONS, MODERATE_EMOTIONS_BY_ID, type EmotionId } from '../constants/emotions'
 
 describe('Plutchik 8 emotions', () => {
   it('有 8 個 emotion ID + 1 skip cell', () => {
@@ -37,5 +37,21 @@ describe('Plutchik 8 emotions', () => {
     const emotionCells = GRID_LAYOUT.filter((c) => c.id !== 'skip')
     expect(emotionCells).toHaveLength(8)
     expect(GRID_LAYOUT.some((c) => c.id === SKIP_CELL.id)).toBe(true)
+  })
+
+  it('中度 4 格：開心/傷心/嬲/驚 + 短 TTS', () => {
+    expect(MODERATE_EMOTIONS).toHaveLength(4)
+    expect(MODERATE_EMOTIONS.map((e) => e.id)).toEqual([
+      'joy',
+      'sadness',
+      'anger',
+      'fear',
+    ])
+    for (const e of MODERATE_EMOTIONS) {
+      expect(e.ttsText.endsWith('！') || e.ttsText.length <= 4).toBe(true)
+      expect(e.labelZh.length).toBeLessThanOrEqual(2)
+      expect(e.emoji).toBeTruthy()
+    }
+    expect(Object.keys(MODERATE_EMOTIONS_BY_ID)).toHaveLength(4)
   })
 })

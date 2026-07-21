@@ -166,3 +166,42 @@ export const GRID_LAYOUT: ReadonlyArray<Emotion | typeof SKIP_CELL> = [
   EMOTIONS_BY_ID.anticipation,
   SKIP_CELL,
 ]
+
+/**
+ * 中度智障學生用 — 只 4 個基本情緒（2×2）
+ * 原則：生活化、短 TTS、大視覺、零抽象詞（信任/期待/討厭唔入）
+ */
+export type ModerateEmotionId = 'joy' | 'sadness' | 'anger' | 'fear'
+
+export const MODERATE_EMOTIONS: ReadonlyArray<Emotion> = [
+  {
+    ...EMOTIONS_BY_ID.joy,
+    labelZh: '開心',
+    ttsText: '開心！',
+  },
+  {
+    ...EMOTIONS_BY_ID.sadness,
+    labelZh: '傷心',
+    ttsText: '傷心！',
+  },
+  {
+    ...EMOTIONS_BY_ID.anger,
+    labelZh: '嬲',
+    ttsText: '嬲！',
+  },
+  {
+    ...EMOTIONS_BY_ID.fear,
+    labelZh: '驚',
+    ttsText: '驚！',
+  },
+]
+
+export const MODERATE_EMOTIONS_BY_ID: Readonly<
+  Record<ModerateEmotionId, Emotion>
+> = MODERATE_EMOTIONS.reduce(
+  (acc, e) => {
+    acc[e.id as ModerateEmotionId] = e
+    return acc
+  },
+  {} as Record<ModerateEmotionId, Emotion>,
+)
