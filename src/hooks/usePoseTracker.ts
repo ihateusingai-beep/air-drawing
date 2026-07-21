@@ -92,10 +92,19 @@ export function usePoseTracker(options: UsePoseTrackerOptions): UsePoseTrackerSt
         )
         if (cancelled) return
 
+        // v3.0.8.3 fix: 真實 Google Storage URL
+        // 對齊 Google 官方 mediapipe-samples-web (verified 2026-07-21)
+        // https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_{lite|full|heavy}/float16/1/pose_landmarker_{lite|full|heavy}.task
+        // 我哋 ship 階段只用 lite (modelComplexity = 0)
+        const modelAssetPath =
+          'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+
         const landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/${modelComplexity === 0 ? 'pose_landmarker_lite.task' : 'pose_landmarker_full.task'}`,
-            delegate: 'GPU',
+            modelAssetPath,
+            // v3.0.8.3 fix: 用 CPU delegate (GPU delegate 喺 Mac Safari + 部分 Chromium 唔穩, init 拋 generic error)
+            // 對齊 useHandTracker v3.0.7.2 嘅 fix
+            delegate: 'CPU',
           },
           runningMode: 'VIDEO',
           numPoses: 1,
