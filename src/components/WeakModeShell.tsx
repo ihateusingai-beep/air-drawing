@@ -31,6 +31,7 @@ import { useDwellClick } from '../hooks/useFingerHover'
 import { useHandTracker, useFingerHoverOnElement } from '../hooks/useHandTracker'
 import { useAACPreference } from '../hooks/useAACPreference'
 import { useEmotionLog } from '../hooks/useEmotionLog'
+import { EMOTION_VOCABULARY } from '../data/emotionVocabulary'
 import { useProfileStore } from '../store/profileStore'
 import { usePageVisibility } from '../hooks/usePageVisibility'
 import {
@@ -416,6 +417,23 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           celebrationActive={celebration !== null}
           lastClicked={lastClicked}
         />
+
+        {/* Sprint 76 F3: 情緒 vocabulary 教學 — 顯示 last clicked emotion 嘅 scenario
+            純 display, 將來 F3 batch 2 加 videoUrl + body language */}
+        {lastClicked && lastClicked !== 'skip' && (
+          <div
+            className="mx-auto max-w-2xl w-full p-3 bg-slate-800/60 rounded-xl border border-slate-700/50 text-center"
+            aria-live="polite"
+          >
+            <p className="text-xs text-slate-400 mb-1">💡 情境參考</p>
+            <p className="text-sm text-slate-200">
+              {EMOTION_VOCABULARY[lastClicked].scenarios[0].text}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              類別: {EMOTION_VOCABULARY[lastClicked].scenarios[0].category}
+            </p>
+          </div>
+        )}
       </main>
 
       <WeakModeCelebration
