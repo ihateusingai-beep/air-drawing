@@ -50,6 +50,9 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
   const [isEraser, setIsEraser] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false) // AAC default off
   const [webcamOpacity, setWebcamOpacity] = useState(40)
+  // v3.0.8.7: 空中魔法筆 toggle — 開鏡頭 + finger detection 基礎上
+  // 用戶主動切換 finger-cam mode, 食指 hover 自動 draw
+  const [fingerCamMode, setFingerCamMode] = useState(false)
 
   // v3.0.8.4: Bug 1 - High mode 從未 wire up useHandTracker
   // Plan §12.4 spec 寫 high mode 支援 finger-cam mode, 但 ship 時冇實裝
@@ -75,7 +78,31 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
       ? { color: `hsl(${Date.now() % 360}, 90%, 60%)`, size, composite: 'source-over' as const }
       : { color, size, composite: 'source-over' as const }
 
-  const mode: DrawingMode = isEraser ? 'eraser' : isRainbow ? 'rainbow' : 'pen'
+  // v3.0.8.7: fingerCamMode 優先 — 開空中畫筆時, mode 變 'finger-cam' (覆蓋其他 mode)
+  const mode: DrawingMode = fingerCamMode
+    ? 'finger-cam'
+    : isEraser
+      ? 'eraser'
+      : isRainbow
+        ? 'rainbow'
+        : 'pen'
+
+  // v3.0.8.7: externalPointer 從 webcam 食指 normalized coord (0-1) 換算落 canvas 座標
+  // fingerCamMode 開 + webcam 啟動 + hand.isReady → pass finger tip (Point 0-1)
+  // DrawingCanvas 內 mode === 'finger-cam' 觸發 handleDrawMove
+  // mirror flag 已由 webcam video element 嘅 scaleX(-1) handle (視覺 = canvas 一致)
+  // 直接 normalized * canvas 640x480 即可
+  const externalPointer = (fingerCamMode && hand.isReady && hand.indexFingerTip)
+    ? { x: hand.indexFingerTip.x * 640, y: hand.indexFingerTip.y * 480 }
+    : null
+
+  // v3.0.8.7: 自動關閉 finger-cam 當 webcam 關
+  // 用戶關鏡頭 → fingerCamMode 自動 false (避免 stale mode)
+  useEffect(() => {
+    if (!showWebcam && fingerCamMode) {
+      setFingerCamMode(false)
+    }
+  }, [showWebcam, fingerCamMode])
 
   // Render template when changed
   useEffect(() => {
@@ -129,28 +156,47 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
     drawingCanvasHandleRef.current?.clear()
   }, [])
 
+  // v3.0.8.7.1: fingerCamMode toggle callback — 連 click sound + log 助 debug
+  const handleFingerCamToggle = useCallback(() => {
+    setFingerCamMode((v) => {
+      const next = !v
+      // eslint-disable-next-line no-console
+      console.log('[HighMode] finger-cam toggle', { from: v, to: next, handReady: hand.isReady })
+      if (next) playClickSound()
+      return next
+    })
+  }, [hand.isReady])
+
   // v3.0.8.5: webcamError state (之前 silently 失敗, user 唔知點解)
   const [webcamError, setWebcamError] = useState<string | null>(null)
 
-  const handleWebcamToggle = useCallback(async () => {
-    try { await ensureAudioContext() } catch { /* ignore */ }
+  // v3.0.8.6 fix: 將 ensureAudioContext 個 await 移出 click handler
+  // 之前 await 喺 callback 入口 hang React 19 event delegation (CDP probe 確認)
+  // 改用 sync outer + async IIFE — click handler 即時 resolve, getUserMedia 立即 fire
+  // audio init 改 fire-and-forget (不阻擋鏡頭 flow)
+  const handleWebcamToggle = useCallback(() => {
+    // Fire-and-forget audio init, 唔 block 同步 path
+    setTimeout(() => {
+      ensureAudioContext().catch(() => { /* ignore */ })
+    }, 0)
     if (!showWebcam) {
-      try {
-        setWebcamError(null)
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: 640, height: 480 },
-          audio: false,
-        })
-        if (webcamRef.current) {
-          webcamRef.current.srcObject = stream
-          await webcamRef.current.play()
+      void (async () => {
+        try {
+          setWebcamError(null)
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 },
+            audio: false,
+          })
+          if (webcamRef.current) {
+            webcamRef.current.srcObject = stream
+            await webcamRef.current.play()
+          }
+          setShowWebcam(true)
+        } catch (err) {
+          setWebcamError(err instanceof Error ? err.message : '無法啟動鏡頭')
+          setShowWebcam(false)
         }
-        setShowWebcam(true)
-      } catch (err) {
-        // v3.0.8.5 fix: setWebcamError 之前 silently 失敗
-        setWebcamError(err instanceof Error ? err.message: '無法啟動鏡頭')
-        setShowWebcam(false)
-      }
+      })()
     } else {
       if (webcamRef.current?.srcObject) {
         const tracks = (webcamRef.current.srcObject as MediaStream).getTracks()
@@ -258,7 +304,7 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
             virtualCursorRef={virtualCursorRef}
             brush={brush}
             mode={mode}
-            externalPointer={null}
+            externalPointer={externalPointer}
             showWebcam={showWebcam}
             webcamOpacity={webcamOpacity}
             // v3.0.8.2: 對齊 source v1.0 mirror=true
@@ -271,15 +317,29 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
               喺 DrawingCanvas 之下, stage 之外。
               顯示 finger cursor 喺 mon position (fixed, 全 screen),
               mirror flip 同 useFingerHoverOnElement 一致 (1 - tipX).
-              pointer-events-none 唔阻擋下層 click / pointer event */}
+              pointer-events-none 唔阻擋下層 click / pointer event
+              v3.0.8.7.1: 加 finger-cam toggle UX hint — finger ready 但未開 toggle
+              顯示 affordance「按 ✏️ 開啟空中魔法筆」,否則 user 有 detection 但唔知點 draw */}
           {showWebcam && (
-            <p className="mt-2 text-xs text-slate-500" aria-live="polite">
-              {hand.error
-                ? `⚠️ 手指偵測錯誤: ${hand.error}`
-                : hand.isReady
-                  ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指, 見到 👆 跟住你'
-                  : '⌛ 手指偵測啟動中…(首次需下載 MediaPipe model, 約 5-10 秒)'}
-            </p>
+            <div className="mt-2 text-xs text-slate-500 flex flex-col gap-1" aria-live="polite">
+              <p>
+                {hand.error
+                  ? `⚠️ 手指偵測錯誤: ${hand.error}`
+                  : hand.isReady
+                    ? '🖐️ 手指偵測就緒 — 鏡頭前舉起食指, 見到 👆 跟住你'
+                    : '⌛ 手指偵測啟動中…(首次需下載 MediaPipe model, 約 5-10 秒)'}
+              </p>
+              {hand.isReady && !fingerCamMode && (
+                <p className="text-amber-300 font-semibold">
+                  👉 按右側「✏️ 開啟空中魔法筆」即可用食指空中畫畫
+                </p>
+              )}
+              {fingerCamMode && (
+                <p className="text-amber-300 font-semibold">
+                  ✨ 空中魔法筆啟動中 — 食指移動自動畫畫, 再按 ✋ 關閉即可用滑鼠
+                </p>
+              )}
+            </div>
           )}
           {hand.isReady && hand.indexFingerTip && showWebcam && webcamRef.current && (() => {
             const v = webcamRef.current
@@ -334,6 +394,32 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
 
         {/* Right: control panel */}
         <div className="w-full lg:w-80 flex flex-col gap-3 sm:gap-4">
+          {/* v3.0.8.7 + v3.0.8.7.1: 空中魔法筆 toggle (finger-cam mode)
+              開鏡頭後, 此按鈕才 work. 開啟後, 食指 hover 自動 draw
+              v3.0.8.7.1: 用 handleFingerCamToggle callback 連 click sound + log */}
+          <button
+            type="button"
+            onClick={handleFingerCamToggle}
+            disabled={!showWebcam || !hand.isReady}
+            aria-pressed={fingerCamMode}
+            title={!showWebcam
+              ? '請先開鏡頭'
+              : !hand.isReady
+                ? '手指偵測未就緒'
+                : fingerCamMode
+                  ? '關閉空中魔法筆, 改用滑鼠'
+                  : '開啟空中魔法筆, 食指自動畫圖'}
+            className={`
+              w-full px-4 py-3 rounded-xl text-sm font-bold transition active:scale-95 shadow-md
+              ${fingerCamMode
+                ? 'bg-amber-500 text-slate-900 ring-2 ring-amber-300 animate-pulse'
+                : 'bg-slate-800/80 text-slate-300 border border-slate-700/50 hover:bg-slate-700/80'
+              }
+              disabled:opacity-50 disabled:cursor-not-allowed
+            `}
+          >
+            {fingerCamMode ? '✋ 關閉空中魔法筆' : '✏️ 開啟空中魔法筆'}
+          </button>
           <TemplatePicker current={template} onPick={handleTemplate} />
           <ColorPalette
             current={color}

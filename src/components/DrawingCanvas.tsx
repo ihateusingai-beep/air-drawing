@@ -122,21 +122,67 @@ export function DrawingCanvas({
   )
 
   // External pointer (MediaPipe AI finger / Pose) — handle in effect
+  // v3.0.8.7 + v3.0.8.7.1: AI pointer 走自己邏輯 (唔通過 handleDrawMove)
+  // 對 AI 嚟講, 每個 frame 都係 stroke continuation:
+  //   1. 第一次 frame: draw 起點 dot (避免 first-point silent return) + set lastPointRef = p
+  //   2. 後續 frame: draw segment (用 smoothed point)
+  //
+  // v3.0.8.7.1 fix: 第一個 frame 唔可以 silent return, 否則 user 見 cursor 但畫唔到
+  //   (Mirror flip 唔需要: webcam video element 已經 scaleX(-1), AI finger tip normalized
+  //    已經喺 mirror 後嘅 coord system, 0-1 直接 * 640/480 即可)
   useEffect(() => {
-    if (!externalPointer) return
-    // For AI input, only draw when mode is finger-cam or pose-cam
     if (mode !== 'finger-cam' && mode !== 'pose-cam') return
-    handleDrawMove(externalPointer)
-  }, [externalPointer, mode, handleDrawMove])
+    if (!externalPointer) {
+      // v3.0.8.7.1: 當 external pointer 走甩 (mode off / hand lost), reset state
+      // 避免 stale lastPointRef 喺 mouse draw 時突然連過去
+      lastPointRef.current = null
+      isDrawingRef.current = false
+      return
+    }
+    const canvas = drawingCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const prev = lastPointRef.current
+    if (!prev) {
+      // 第一次 frame: 起始 stroke + 落起點 dot
+      // 起點 dot 半徑 = brush.size/2 (lineCap round 已自動 round, 但 drawSegment
+      // 只 draw line segment, 起點用 lineCap round 都會 round 末端但唔會有 dot 起點)
+      // 解決: explicit 落 circle 喺起點
+      ctx.save()
+      ctx.fillStyle = brush.color
+      ctx.beginPath()
+      ctx.arc(externalPointer.x, externalPointer.y, brush.size / 2, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+      lastPointRef.current = externalPointer
+      isDrawingRef.current = true
+      return
+    }
+    // 後續 frame: draw segment
+    const smoothed = smoothPoint(prev, externalPointer, 0.6)
+    drawSegment(ctx, prev, smoothed, brush)
+    lastPointRef.current = smoothed
+  }, [externalPointer, mode, brush])
 
   // v3.0.8.2: PointerEvent 統一 handler (iPad + Mac + touch screen 全部)
   // React 19 對 PointerEvent 完整支援, 取代舊 mouse + touch 兩套 handler
   // 避免 desktop Chrome + iPad 雙重 fire 同一個 event
+  // v3.0.8.7.1 fix: finger-cam / pose-cam mode 期間, pointer event 唔可以 fire
+  // 避免 mouse click + finger 同時 drive 同一個 isDrawingRef/lastPointRef
+  // 導致 stale state cross-pollute (line 跳到 mouse 位置)
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       // pointerType = 'pen' | 'touch' | 'mouse' — 全部統一處理
       // 不 preventDefault mouse 行為, 保留 scroll/zoom
       if (e.pointerType === 'mouse' && e.button !== 0) return
+      // v3.0.8.7.1: AI 模式期間 block pointer event (mouse 唔可以同時 draw)
+      if (mode === 'finger-cam' || mode === 'pose-cam') {
+        // eslint-disable-next-line no-console
+        console.log('[DrawingCanvas] pointerDown blocked (AI mode active)', { mode })
+        return
+      }
       const canvas = drawingCanvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
@@ -146,19 +192,21 @@ export function DrawingCanvas({
       // eslint-disable-next-line no-console
       console.log('[DrawingCanvas] pointerDown', { type: e.pointerType, button: e.button, p })
     },
-    [drawingCanvasRef, mirror],
+    [drawingCanvasRef, mirror, mode],
   )
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (!isDrawingRef.current) return
+      // v3.0.8.7.1: AI 模式期間 block pointer move
+      if (mode === 'finger-cam' || mode === 'pose-cam') return
       const canvas = drawingCanvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const p = toCanvasCoords(e.clientX, e.clientY, rect, CANVAS_W, CANVAS_H, mirror)
       handleDrawMove(p)
     },
-    [drawingCanvasRef, mirror, handleDrawMove],
+    [drawingCanvasRef, mirror, handleDrawMove, mode],
   )
 
   const handlePointerUp = useCallback(() => {

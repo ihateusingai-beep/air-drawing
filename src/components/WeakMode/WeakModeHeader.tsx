@@ -28,6 +28,7 @@ export function WeakModeHeader({
         <span>輕鬆模式</span>
         <span className="text-xs text-slate-400 hidden sm:inline">(Low / Beginner)</span>
       </h1>
+      {/* v3.0.8.6: profile display 統一 (對齊 High mode 嘅 👤 ${profile.name}) */}
       <div className="flex items-center gap-2">
         {isTtsSupported() && (
           <button
@@ -48,14 +49,14 @@ export function WeakModeHeader({
           onClick={onWebcamToggle}
           aria-pressed={showWebcam}
           className={`
-            px-3 py-1.5 rounded-lg text-xs font-semibold border transition active:scale-95
+            px-3 py-1.5 rounded-full text-xs font-semibold border transition active:scale-95
             ${showWebcam
               ? 'bg-green-500/20 border-green-500/50 text-green-300'
-              : 'bg-slate-700 text-slate-300 border-transparent'
+              : 'bg-slate-900/60 border-slate-700/50 text-slate-300'
             }
           `}
         >
-          {showWebcam ? '🟢 鏡頭 ON' : '📷 鏡頭 OFF'}
+          {showWebcam ? '🟢 鏡頭 ON' : '🔴 鏡頭 OFF'}
         </button>
         <button
           type="button"
