@@ -75,6 +75,28 @@ export function dwellWarningLevel(ms: number): 'fast' | 'slow' | null {
   return null
 }
 
+/** Mid mode pose classifier tolerance bounds (R24 緩解) */
+export const CLS_TOLERANCE_MIN = 0.5
+export const CLS_TOLERANCE_MAX = 1.5
+export const CLS_TOLERANCE_DEFAULT = 1.0
+export const CLS_TOLERANCE_STEP = 0.1
+
+/** Clamp classifier tolerance 落 safe range */
+export function clampClassifierTolerance(t: number): number {
+  return Math.max(
+    CLS_TOLERANCE_MIN,
+    Math.min(CLS_TOLERANCE_MAX, Math.round(t * 10) / 10),
+  )
+}
+
+/** Detect tolerance warning level(對應 plan §12.3) */
+export function toleranceWarningLevel(t: number): 'strict' | 'loose' | null {
+  if (t < CLS_TOLERANCE_MIN || t > CLS_TOLERANCE_MAX) return null
+  if (t <= 0.6) return 'strict' // 高信心, 嚴格, 動作必須精確
+  if (t >= 1.4) return 'loose' // 低信心, 寬鬆, 易誤觸
+  return null
+}
+
 const META_LAST_PROFILE = 'lastProfileId'
 const META_LAST_MODE = 'lastMode'
 
@@ -89,7 +111,15 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
   loadProfiles: async () => {
     set({ loading: true })
     try {
-      const profiles = await getAllProfiles()
+      const rawProfiles = await getAllProfiles()
+      // Backward-compat: 舊 IDB profile 冇 classifierTolerance 字段, 自動補預設
+      const profiles = rawProfiles.map((p) => ({
+        ...p,
+        classifierTolerance:
+          typeof p.classifierTolerance === 'number'
+            ? clampClassifierTolerance(p.classifierTolerance)
+            : CLS_TOLERANCE_DEFAULT,
+      }))
       let activeProfileId: string | null = null
       const savedId = await getMeta(META_LAST_PROFILE)
       if (savedId && profiles.find((p) => p.id === savedId)) {
@@ -125,6 +155,7 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
       name: name.trim() || `Student ${Math.floor(Math.random() * 1000)}`,
       defaultMode,
       dwellTimeMs: DWELL_TIME_DEFAULT_MS,
+      classifierTolerance: CLS_TOLERANCE_DEFAULT,
       ttsEnabled: true,
       createdAt: Date.now(),
     }
@@ -150,10 +181,15 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
   updateProfile: async (id, patch) => {
     const profile = get().profiles.find((p) => p.id === id)
     if (!profile) return
-    // R40 緩解: validate dwellTimeMs 範圍, 防止 store invalid data
+    // R40 / R24 緩解: validate range fields, 防止 store invalid data
     const validated: Partial<ProfileRecord> = { ...patch }
     if (validated.dwellTimeMs !== undefined) {
       validated.dwellTimeMs = clampDwellTimeMs(validated.dwellTimeMs)
+    }
+    if (validated.classifierTolerance !== undefined) {
+      validated.classifierTolerance = clampClassifierTolerance(
+        validated.classifierTolerance,
+      )
     }
     const updated = { ...profile, ...validated }
     await putProfile(updated)

@@ -12,6 +12,10 @@ import {
   DWELL_TIME_MAX_MS,
   DWELL_TIME_STEP_MS,
   dwellWarningLevel,
+  CLS_TOLERANCE_MIN,
+  CLS_TOLERANCE_MAX,
+  CLS_TOLERANCE_STEP,
+  toleranceWarningLevel,
 } from '../store/profileStore'
 import type { ProfileRecord } from '../services/idb'
 
@@ -140,6 +144,16 @@ export function ProfileSwitcher({ open, onClose }: ProfileSwitcherProps): React.
             />
           )}
 
+          {/* Phase 3 校準: tolerance slider 0.5-1.5, 適用 mid mode 動作 classifier */}
+          {selectedProfile && (
+            <ToleranceSliderSection
+              profile={selectedProfile}
+              onChange={async (t) => {
+                await updateProfile(selectedProfile.id, { classifierTolerance: t })
+              }}
+            />
+          )}
+
           <h3 className="text-sm font-semibold text-slate-300">新增學生</h3>
           <div className="flex gap-2">
             <input
@@ -232,6 +246,68 @@ function DwellSliderSection({
       <p className="text-[10px] text-slate-500">
         💡 Dwell-click 停留時間越短,點擊越快但越易誤觸。智障 / ASD 學生建議
         0.3-0.4s,學習遲緩建議 0.5s,怕誤觸可調到 0.7-0.8s。
+      </p>
+    </div>
+  )
+}
+
+/**
+ * ToleranceSliderSection — R24 / Phase 3 校準 UI.
+ * Mid mode pose classifier tolerance 0.5-1.5, per profile.
+ */
+function ToleranceSliderSection({
+  profile,
+  onChange,
+}: {
+  profile: ProfileRecord
+  onChange: (t: number) => void | Promise<void>
+}) {
+  const warning = toleranceWarningLevel(profile.classifierTolerance)
+  return (
+    <div className="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-700">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-amber-400">
+          🎯 {profile.name} 嘅 Pose 寬鬆度
+        </h3>
+        <span className="text-sm font-mono text-white">
+          {profile.classifierTolerance.toFixed(1)}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={CLS_TOLERANCE_MIN * 10}
+        max={CLS_TOLERANCE_MAX * 10}
+        step={CLS_TOLERANCE_STEP * 10}
+        value={profile.classifierTolerance * 10}
+        onChange={(e) => onChange(Number(e.target.value) / 10)}
+        className="w-full accent-amber-400"
+        aria-label="Pose 動作寬鬆度 (0.5 嚴格 至 1.5 寬鬆)"
+        aria-valuemin={CLS_TOLERANCE_MIN}
+        aria-valuemax={CLS_TOLERANCE_MAX}
+        aria-valuenow={profile.classifierTolerance}
+      />
+
+      <div className="flex justify-between text-[10px] text-slate-500">
+        <span>0.5 嚴格</span>
+        <span>1.0 預設</span>
+        <span>1.5 寬鬆</span>
+      </div>
+
+      {warning && (
+        <p
+          className={`text-xs ${warning === 'strict' ? 'text-amber-300' : 'text-orange-300'}`}
+          role="status"
+        >
+          {warning === 'strict'
+            ? '🎯 嚴格:動作必須精確,可能漏 match'
+            : '🌊 寬鬆:易 match 但可能誤觸'}
+        </p>
+      )}
+
+      <p className="text-[10px] text-slate-500">
+        💡 Mid mode 嘅動作偵測敏感度。嚴格 = 高信心但漏 match,寬鬆 = 易 match 但易誤觸。
+        進入 Mid mode 可用「🎯 校準 Pose 動作」自動建議 per profile 數值。
       </p>
     </div>
   )

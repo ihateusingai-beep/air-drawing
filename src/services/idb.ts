@@ -5,7 +5,7 @@
  * IndexedDB 喺 R27 私隱保護下使用(只 local,0 上傳)。
  *
  * Store 結構(統一 schema, R38 緩解):
- *   - profiles:  { id, name, randomId, pinHash, defaultMode, dwellTimeMs, ttsEnabled, createdAt }
+ *   - profiles:  { id, name, randomId, pinHash, defaultMode, dwellTimeMs, classifierTolerance, ttsEnabled, createdAt }
  *   - emotion_logs:  { id, profileId, emotionId, source, ts }
  *   - artworks:  { id, profileId, ts, dataURL, emotionLabel }
  *   - pose_logs:  { id, profileId, pose, confidence, matched, ts } (Phase 3)
@@ -83,6 +83,8 @@ export interface ProfileRecord {
   pinHash?: string // optional 4-6 digit PIN (hashed, plain text 唔 store)
   defaultMode: 'low' | 'mid' | 'high'
   dwellTimeMs: number
+  /** Mid mode pose classifier tolerance, 0.5 (嚴格) - 1.5 (寬鬆) */
+  classifierTolerance: number
   ttsEnabled: boolean
   createdAt: number
 }

@@ -39,6 +39,10 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
 
   // Profile
   const activeProfileId = useProfileStore((s) => s.activeProfileId)
+  const classifierTolerance = useProfileStore((s) => {
+    const p = s.profiles.find((pp) => pp.id === s.activeProfileId)
+    return p?.classifierTolerance ?? 1.0
+  })
 
   // Pose state
   const [currentPose, setCurrentPose] = useState<PoseAction>('none')
@@ -104,7 +108,7 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
     }
     const prevFrame = history[1] ?? null
     const prevFrames = [history[1] ?? null, history[2] ?? null, history[3] ?? null]
-    return classifyPose(pose.landmarks, prevFrame, prevFrames)
+    return classifyPose(pose.landmarks, prevFrame, prevFrames, classifierTolerance)
   }, [pose.landmarks, history])
 
   // Update state from classification
@@ -225,6 +229,80 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
       }
     }
   }, [])
+
+  // Pose calibration state — per profile tolerance 校準 step
+  const [calibrationStep, setCalibrationStep] = useState<number>(-1) // -1 = off
+  const [calibrationScores, setCalibrationScores] = useState<Record<string, number[]>>({})
+  const [showCalibration, setShowCalibration] = useState(false)
+
+  // Pose 動作順序: 8 個 emotion 動作順序
+  const POSE_CALIBRATION_ORDER: Array<{
+    key: string
+    label: { zh: string; emoji: string }
+  }> = [
+    { key: 'hands_up', label: { zh: '舉高雙手', emoji: '🙌' } },
+    { key: 'hands_down', label: { zh: '放下雙手', emoji: '👇' } },
+    { key: 'fist', label: { zh: '握拳', emoji: '✊' } },
+    { key: 'cover_face', label: { zh: '掩面', emoji: '🙈' } },
+    { key: 'hug', label: { zh: '擁抱姿勢', emoji: '🤗' } },
+    { key: 'clap', label: { zh: '拍手', emoji: '👏' } },
+    { key: 'step_back', label: { zh: '退後', emoji: '🙅' } },
+    { key: 'pace', label: { zh: '來回踱步', emoji: '🚶' } },
+  ]
+
+  // 收集 calibration 數據
+  useEffect(() => {
+    if (calibrationStep < 0 || !classification) return
+    const currentPose = POSE_CALIBRATION_ORDER[calibrationStep]?.key
+    if (!currentPose) return
+    const score = classification.scores[currentPose as keyof typeof classification.scores] ?? 0
+    setCalibrationScores((prev) => {
+      const arr = prev[currentPose] ?? []
+      const next = [...arr, score].slice(-30) // last 30 frames ~ 1s at 30fps
+      return { ...prev, [currentPose]: next }
+    })
+  }, [classification, calibrationStep])
+
+  const handleStartCalibration = useCallback(() => {
+    setShowCalibration(true)
+    setCalibrationScores({})
+    setCalibrationStep(0)
+  }, [])
+
+  const handleCalibrationNext = useCallback(() => {
+    setCalibrationStep((s) => s + 1)
+  }, [])
+
+  const handleCalibrationFinish = useCallback(async () => {
+    // 分析數據: 每個動作平均 score 計算建議 tolerance
+    const avgScores: Record<string, number> = {}
+    for (const [key, scores] of Object.entries(calibrationScores)) {
+      if (scores.length > 0) {
+        avgScores[key] = scores.reduce((a, b) => a + b, 0) / scores.length
+      }
+    }
+    // 如果平均 score 全部 >= 0.5, 用戶動作清楚, 建議嚴格 tolerance
+    // 如果低, 建議寬鬆
+    const avgAll =
+      Object.values(avgScores).reduce((a, b) => a + b, 0) /
+      Math.max(1, Object.values(avgScores).length)
+    let suggested: number
+    if (avgAll >= 0.7) {
+      suggested = 0.7 // 動作清楚, 嚴格
+    } else if (avgAll >= 0.5) {
+      suggested = 1.0 // 預設
+    } else {
+      suggested = 1.3 // 動作模糊, 寬鬆
+    }
+    // Save to profile
+    if (activeProfileId) {
+      await useProfileStore.getState().updateProfile(activeProfileId, {
+        classifierTolerance: suggested,
+      })
+    }
+    setShowCalibration(false)
+    setCalibrationStep(-1)
+  }, [calibrationScores, activeProfileId])
 
   return (
     <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
@@ -397,8 +475,99 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
         </div>
       </main>
 
+      {/* Calibration 啟動 button */}
+      {!showCalibration && showWebcam && pose.isReady && (
+        <div className="px-4 pb-3 text-center">
+          <button
+            type="button"
+            onClick={handleStartCalibration}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-semibold hover:bg-amber-500/30 active:scale-95"
+          >
+            🎯 校準 Pose 動作 (建議 per profile)
+          </button>
+          <span className="text-xs text-slate-500 ml-2">
+            目前 tolerance: {classifierTolerance.toFixed(1)}
+          </span>
+        </div>
+      )}
+
+      {/* Calibration modal */}
+      {showCalibration && calibrationStep >= 0 && (
+        <div
+          className="fixed inset-0 bg-slate-950/95 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pose 動作校準"
+        >
+          <div className="bg-slate-800 rounded-2xl border border-amber-500/50 shadow-2xl max-w-md w-full p-6">
+            {calibrationStep < POSE_CALIBRATION_ORDER.length ? (
+              <>
+                <h2 className="text-lg font-bold text-amber-400 mb-2 text-center">
+                  🎯 校準動作 {calibrationStep + 1} / {POSE_CALIBRATION_ORDER.length}
+                </h2>
+                <div className="text-center mb-4">
+                  <div className="text-7xl mb-2" aria-hidden="true">
+                    {POSE_CALIBRATION_ORDER[calibrationStep].label.emoji}
+                  </div>
+                  <div className="text-xl font-bold">
+                    {POSE_CALIBRATION_ORDER[calibrationStep].label.zh}
+                  </div>
+                </div>
+                {pose.landmarks && (
+                  <div className="bg-slate-900 rounded-lg p-3 text-center mb-4">
+                    <div className="text-xs text-slate-400">當前 score</div>
+                    <div className="text-2xl font-mono text-amber-300">
+                      {(
+                        (classification?.scores[
+                          POSE_CALIBRATION_ORDER[calibrationStep].key as 'hands_up'
+                        ] ?? 0) * 100
+                      ).toFixed(0)}
+                      %
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-slate-400 text-center mb-4">
+                  慢慢做 3 秒動作,系統會收集數據建議 tolerance
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCalibrationNext}
+                    className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-sm rounded-lg active:scale-95"
+                  >
+                    跳過
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCalibrationNext}
+                    className="flex-1 py-2 bg-amber-500 text-slate-900 text-sm font-bold rounded-lg active:scale-95"
+                  >
+                    {calibrationStep + 1 < POSE_CALIBRATION_ORDER.length
+                      ? '下一個 →'
+                      : '完成 ✓'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center">
+                <div className="text-5xl mb-3" aria-hidden="true">✅</div>
+                <h2 className="text-lg font-bold text-amber-400 mb-2">校準完成</h2>
+                <p className="text-sm text-slate-300 mb-4">建議 tolerance 已自動 save</p>
+                <button
+                  type="button"
+                  onClick={handleCalibrationFinish}
+                  className="w-full py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg active:scale-95"
+                >
+                  確認
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <footer className="px-4 py-3 text-center text-xs text-slate-500 border-t border-slate-700/50">
-        🟡 中級模式 · MediaPipe Pose · 8 動作 classifier · 本地 0 上傳 🔒
+        🟡 中級模式 · MediaPipe Pose · 8 動作 classifier · tolerance {classifierTolerance.toFixed(1)} · 本地 0 上傳 🔒
       </footer>
     </div>
   )
