@@ -24,6 +24,7 @@ import { EMOTIONS_BY_ID, GRID_LAYOUT, SKIP_CELL, type Emotion, type EmotionId } 
 import { speak, stopTts, isTtsSupported, preloadVoices, setTtsEnabled, getTtsEnabled } from '../services/tts'
 import { useDwellClick } from '../hooks/useFingerHover'
 import { useProfileStore } from '../store/profileStore'
+import { usePageVisibility } from '../hooks/usePageVisibility'
 
 interface WeakModeShellProps {
   onExit: () => void
@@ -159,6 +160,36 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       }
     }
   }, [])
+
+  // R14 緩解: PWA background suspend webcam
+  const isVisible = usePageVisibility()
+  useEffect(() => {
+    if (isVisible || !showWebcam) return
+    if (webcamRef.current?.srcObject) {
+      const tracks = (webcamRef.current.srcObject as MediaStream).getTracks()
+      tracks.forEach((t) => t.stop())
+      webcamRef.current.srcObject = null
+    }
+  }, [isVisible, showWebcam])
+
+  useEffect(() => {
+    if (isVisible && showWebcam && !webcamRef.current?.srcObject) {
+      void (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 },
+            audio: false,
+          })
+          if (webcamRef.current) {
+            webcamRef.current.srcObject = stream
+            await webcamRef.current.play()
+          }
+        } catch {
+          setShowWebcam(false)
+        }
+      })()
+    }
+  }, [isVisible, showWebcam])
 
   return (
     <div className="min-h-dvh flex flex-col bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white">

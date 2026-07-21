@@ -14,8 +14,35 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1, minimum-scale=1"
     />
     <meta name="theme-color" content="#0f172a" />
-    <meta name="description" content="Non-verbal 表達輔具 — Plutchik 8 emotion vocabulary, iPad + Notebook cross-device, 100% client-side" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="description" content="Non-verbal 表達輔具 — Plutchik 8 emotion vocabulary, iPad + Notebook cross-device, 100% client-side, 0 上傳" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="魔法畫筆" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!--
+      Content-Security-Policy (R27 智障私隱 — 0 上傳硬保險)
+      - default-src 'self': 只 load 同源 resource
+      - script-src 'self' + 'unsafe-inline' + 'unsafe-eval': Tailwind CDN 需要 unsafe-inline
+        (Phase 4 改 vite plugin 之後可移除 unsafe-inline)
+      - style-src 'self' + 'unsafe-inline': Tailwind JIT 需要
+      - img-src 'self' + data: + blob:
+      - media-src 'self' + blob: (WebRTC 需要)
+      - connect-src 'self': 0 上傳,任何 fetch / XHR 只到同源
+      - worker-src 'self': Service Worker
+      - object-src 'none': 禁 Flash 之類 plugin
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
     <title>AI 魔法空中畫筆 · Non-verbal 表達輔具</title>
+    <!--
+      PWA manifest (Phase 4b 提前 ship, R14 緩解)
+      iOS 16.4+ 完整支援 Web App Manifest
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
     <!--
       Phase 1: Tailwind CDN (暫時, Phase 4 改 @tailwindcss/vite plugin)
       Source 同源: 原 source 嘅 https://cdn.tailwindcss.com

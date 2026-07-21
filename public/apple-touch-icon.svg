@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <!--
+    Apple touch icon (180×180) — iOS legacy 仍讀 SVG 唔識, 但 iOS 17.4+ 支援 SVG icon.
+    180×180 是 iOS legacy standard.
+    我哋同時提供 SVG, 部署時 PNG 化 (Phase 3 build script).
+  -->
+  <defs>
+    <linearGradient id="bgApple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="url(#bgApple)"/>
+  <circle cx="90" cy="76" r="26" fill="#fbbf24"/>
+  <text x="90" y="88" font-size="34" text-anchor="middle" fill="#0f172a">🎨</text>
+  <text x="90" y="138" font-size="20" text-anchor="middle" font-weight="700" fill="#f59e0b" font-family="system-ui">畫筆</text>
+</svg>

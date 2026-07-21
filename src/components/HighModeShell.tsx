@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DrawingCanvas, DEFAULT_BRUSH, ERASER_BRUSH, type DrawingMode, type DrawingCanvasHandle } from './DrawingCanvas'
+import { usePageVisibility } from '../hooks/usePageVisibility'
 import { TemplatePicker } from './TemplatePicker'
 import { ColorPalette } from './ColorPalette'
 import { BrushSize } from './BrushSize'
@@ -151,6 +152,39 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
       }
     }
   }, [])
+
+  // R14 緩解: PWA background 時 suspend webcam,resume re-init
+  const isVisible = usePageVisibility()
+  useEffect(() => {
+    if (isVisible || !showWebcam) return
+    // Background: 停 webcam 釋放 hardware
+    if (webcamRef.current?.srcObject) {
+      const tracks = (webcamRef.current.srcObject as MediaStream).getTracks()
+      tracks.forEach((t) => t.stop())
+      webcamRef.current.srcObject = null
+    }
+  }, [isVisible, showWebcam])
+
+  useEffect(() => {
+    // Resume: 如果 webcam 之前開住, 自動 re-init
+    if (isVisible && showWebcam && !webcamRef.current?.srcObject) {
+      void (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 },
+            audio: false,
+          })
+          if (webcamRef.current) {
+            webcamRef.current.srcObject = stream
+            await webcamRef.current.play()
+          }
+        } catch {
+          // BUG 10: 失敗關閉
+          setShowWebcam(false)
+        }
+      })()
+    }
+  }, [isVisible, showWebcam])
 
   return (
     <div className="min-h-dvh flex flex-col bg-slate-900 text-white">

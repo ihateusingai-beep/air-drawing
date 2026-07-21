@@ -30,6 +30,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { WeakModeShell } from './components/WeakModeShell'
 import { HighModeShell } from './components/HighModeShell'
 import { ProfileSwitcher } from './components/ProfileSwitcher'
+import { InstallBanner } from './components/InstallBanner'
 import { PinLock } from './components/PinLock'
 import { DailyMoodPrompt, shouldShowDailyPrompt } from './components/DailyMoodPrompt'
 import { useProfileStore, type Mode } from './store/profileStore'
@@ -259,6 +260,7 @@ function App() {
         autoCloseOnUnlock
       />
       <DailyMoodPrompt open={showDailyMood} onClose={() => setShowDailyMood(false)} />
+      <InstallBanner />
     </>
   )
 }
