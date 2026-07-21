@@ -1,12 +1,11 @@
 /**
- * ModerateModeShell — 中度學生主畫面
+ * ModerateModeShell — 中度學生主畫面 + v3.0.9 大慶祝
  *
- * 設計原則（減認知負荷）:
- *  - 直入 2×2 四格：開心 / 傷心 / 嬲 / 驚
- *  - 超大 touch target、淨中文、大 emoji
- *  - 預設 AAC：淨手指撳，無鏡頭 / 無空中筆
- *  - 短 TTS + 成功音 + 全屏慶祝
- *  - 學生面無設定堆；老師入口細角落
+ * 慶祝升級:
+ *  - 每格專屬視覺（joy煙花 / sadness藍雨 / anger紅震 / fear紫閃）
+ *  - Emoji jelly 彈 3 下 + 全屏 pulse 邊框
+ *  - 分情緒音效
+ *  - 慶祝 3.2s + 底部「你揀咗：XX」鞏固 5s
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -16,13 +15,218 @@ import {
   type ModerateEmotionId,
 } from '../constants/emotions'
 import { speak, stopTts, preloadVoices, setTtsEnabled } from '../services/tts'
-import { playSuccessSound, ensureAudioContext } from '../services/audio'
+import {
+  playEmotionCelebrate,
+  ensureAudioContext,
+  type EmotionSfxId,
+} from '../services/audio'
 
-const COOLDOWN_MS = 1800
+const COOLDOWN_MS = 2200
+const CELE_MS = 3200
+const STICKY_MS = 5000
 
 interface ModerateModeShellProps {
-  /** 老師入口：開進階模式選單 */
   onTeacherOpen: () => void
+}
+
+function ParticleField({
+  emotionId,
+  color,
+}: {
+  emotionId: ModerateEmotionId
+  color: string
+}): React.JSX.Element {
+  if (emotionId === 'joy') {
+    // 金色煙花 + confetti + sparkle
+    return (
+      <>
+        {Array.from({ length: 16 }).map((_, i) => {
+          const angle = (i / 16) * Math.PI * 2
+          const dist = 120 + (i % 4) * 50
+          return (
+            <div
+              key={`fw-${i}`}
+              className="absolute left-1/2 top-1/2 w-3 h-3 rounded-full animate-mod-firework"
+              style={
+                {
+                  backgroundColor: i % 2 === 0 ? color : '#FDE68A',
+                  boxShadow: `0 0 12px ${color}`,
+                  animationDelay: `${(i % 5) * 0.04}s`,
+                  '--tx': `${Math.cos(angle) * dist}px`,
+                  '--ty': `${Math.sin(angle) * dist}px`,
+                } as React.CSSProperties
+              }
+            />
+          )
+        })}
+        {Array.from({ length: 28 }).map((_, i) => (
+          <div
+            key={`cf-${i}`}
+            className="absolute rounded-sm animate-confetti-fall"
+            style={
+              {
+                width: `${8 + (i % 4) * 5}px`,
+                height: `${12 + (i % 3) * 5}px`,
+                left: `${(i * 3.6) % 100}%`,
+                top: '-24px',
+                backgroundColor: i % 3 === 0 ? '#FBBF24' : i % 3 === 1 ? color : '#FDE68A',
+                animationDelay: `${(i % 8) * 0.06}s`,
+                animationDuration: `${1.4 + (i % 4) * 0.2}s`,
+                '--drift': `${(i % 2 === 0 ? 1 : -1) * (20 + (i % 5) * 10)}px`,
+                '--spin': `${(i % 2 === 0 ? 1 : -1) * (200 + (i % 4) * 50)}deg`,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={`sp-${i}`}
+            className="absolute text-4xl animate-mod-sparkle"
+            style={{
+              left: `${12 + (i * 11) % 80}%`,
+              top: `${18 + (i % 4) * 16}%`,
+              animationDelay: `${0.1 + i * 0.08}s`,
+            }}
+            aria-hidden
+          >
+            ✨
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  if (emotionId === 'sadness') {
+    return (
+      <>
+        {Array.from({ length: 22 }).map((_, i) => (
+          <div
+            key={`rain-${i}`}
+            className="absolute rounded-full animate-mod-rain"
+            style={
+              {
+                width: `${6 + (i % 3) * 3}px`,
+                height: `${18 + (i % 4) * 6}px`,
+                left: `${(i * 4.5) % 100}%`,
+                top: 0,
+                background: `linear-gradient(to bottom, transparent, ${color})`,
+                animationDelay: `${(i % 10) * 0.08}s`,
+                animationDuration: `${1.8 + (i % 5) * 0.15}s`,
+                '--drift': `${(i % 2 === 0 ? 1 : -1) * (8 + (i % 4) * 6)}px`,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={`heart-${i}`}
+            className="absolute text-4xl animate-mod-sparkle"
+            style={{
+              left: `${15 + i * 14}%`,
+              top: `${30 + (i % 3) * 12}%`,
+              animationDelay: `${0.2 + i * 0.12}s`,
+              opacity: 0.85,
+            }}
+            aria-hidden
+          >
+            💙
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  if (emotionId === 'anger') {
+    return (
+      <>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={`sw-${i}`}
+            className="absolute left-1/2 top-1/2 rounded-full border-solid animate-mod-shockwave"
+            style={{
+              width: 120,
+              height: 120,
+              borderColor: color,
+              animationDelay: `${i * 0.15}s`,
+            }}
+          />
+        ))}
+        {Array.from({ length: 14 }).map((_, i) => {
+          const angle = (i / 14) * Math.PI * 2
+          const dist = 100 + (i % 3) * 40
+          return (
+            <div
+              key={`p-${i}`}
+              className="absolute left-1/2 top-1/2 w-4 h-4 rounded-full animate-mod-firework"
+              style={
+                {
+                  backgroundColor: i % 2 === 0 ? color : '#FCA5A5',
+                  animationDelay: `${i * 0.03}s`,
+                  '--tx': `${Math.cos(angle) * dist}px`,
+                  '--ty': `${Math.sin(angle) * dist}px`,
+                } as React.CSSProperties
+              }
+            />
+          )
+        })}
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={`bolt-${i}`}
+            className="absolute text-5xl animate-mod-star-pop"
+            style={{
+              left: `${20 + i * 15}%`,
+              top: `${25 + (i % 2) * 20}%`,
+              animationDelay: `${i * 0.1}s`,
+            }}
+            aria-hidden
+          >
+            💢
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  // fear
+  return (
+    <>
+      <div
+        className="absolute inset-0 animate-mod-fear-flash"
+        style={{ backgroundColor: color, mixBlendMode: 'screen' }}
+        aria-hidden
+      />
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div
+          key={`star-${i}`}
+          className="absolute text-5xl animate-mod-star-pop"
+          style={{
+            left: `${8 + (i * 7.5) % 85}%`,
+            top: `${12 + (i % 5) * 14}%`,
+            animationDelay: `${(i % 6) * 0.09}s`,
+          }}
+          aria-hidden
+        >
+          {i % 2 === 0 ? '⭐' : '💫'}
+        </div>
+      ))}
+      {Array.from({ length: 10 }).map((_, i) => {
+        const angle = (i / 10) * Math.PI * 2
+        return (
+          <div
+            key={`r-${i}`}
+            className="absolute left-1/2 top-1/2 w-2 h-2 rounded-full animate-mod-ring"
+            style={{
+              backgroundColor: '#C4B5FD',
+              boxShadow: `0 0 16px ${color}`,
+              animationDelay: `${i * 0.05}s`,
+              marginLeft: Math.cos(angle) * 8,
+              marginTop: Math.sin(angle) * 8,
+            }}
+          />
+        )
+      })}
+    </>
+  )
 }
 
 export function ModerateModeShell({
@@ -30,15 +234,20 @@ export function ModerateModeShell({
 }: ModerateModeShellProps): React.JSX.Element {
   const [lastId, setLastId] = useState<ModerateEmotionId | null>(null)
   const [clickCount, setClickCount] = useState(0)
+  const [pressedId, setPressedId] = useState<ModerateEmotionId | null>(null)
   const [celebration, setCelebration] = useState<{
     emotion: Emotion
     key: number
   } | null>(null)
+  const [sticky, setSticky] = useState<Emotion | null>(null)
   const lastTriggerRef = useRef(0)
   const timersRef = useRef<Set<number>>(new Set())
 
+  const addTimer = useCallback((id: number) => {
+    timersRef.current.add(id)
+  }, [])
+
   useEffect(() => {
-    // 中度：TTS 永遠開
     setTtsEnabled(true)
     preloadVoices()
     return () => {
@@ -48,33 +257,57 @@ export function ModerateModeShell({
     }
   }, [])
 
-  const handlePick = useCallback(async (emotion: Emotion) => {
-    const now = Date.now()
-    if (now - lastTriggerRef.current < COOLDOWN_MS) return
-    lastTriggerRef.current = now
+  const handlePick = useCallback(
+    async (emotion: Emotion) => {
+      const now = Date.now()
+      if (now - lastTriggerRef.current < COOLDOWN_MS) return
+      lastTriggerRef.current = now
 
-    await ensureAudioContext()
-    playSuccessSound()
-    speak(emotion.ttsText, { lang: 'zh-HK', rate: 0.9, volume: 1 })
+      const id = emotion.id as ModerateEmotionId
+      setPressedId(id)
+      const clearPress = window.setTimeout(() => {
+        setPressedId(null)
+        timersRef.current.delete(clearPress)
+      }, 800)
+      addTimer(clearPress)
 
-    setLastId(emotion.id as ModerateEmotionId)
-    setClickCount((c) => c + 1)
+      await ensureAudioContext()
+      playEmotionCelebrate(id as EmotionSfxId)
+      speak(emotion.ttsText, { lang: 'zh-HK', rate: 0.88, volume: 1 })
 
-    const showTimer = window.setTimeout(() => {
-      setCelebration({ emotion, key: now })
-      timersRef.current.delete(showTimer)
-      const hideTimer = window.setTimeout(() => {
-        setCelebration(null)
-        timersRef.current.delete(hideTimer)
-      }, 2000)
-      timersRef.current.add(hideTimer)
-    }, 80)
-    timersRef.current.add(showTimer)
-  }, [])
+      setLastId(id)
+      setClickCount((c) => c + 1)
+      setSticky(emotion)
+
+      const showTimer = window.setTimeout(() => {
+        setCelebration({ emotion, key: now })
+        timersRef.current.delete(showTimer)
+        const hideTimer = window.setTimeout(() => {
+          setCelebration(null)
+          timersRef.current.delete(hideTimer)
+        }, CELE_MS)
+        addTimer(hideTimer)
+      }, 40)
+      addTimer(showTimer)
+
+      // sticky 5s from click
+      const stickyTimer = window.setTimeout(() => {
+        setSticky((cur) => (cur?.id === emotion.id ? null : cur))
+        timersRef.current.delete(stickyTimer)
+      }, STICKY_MS)
+      addTimer(stickyTimer)
+    },
+    [addTimer],
+  )
 
   return (
-    <div className="min-h-dvh flex flex-col bg-slate-950 text-white select-none">
-      {/* 極簡提示 — 一句話 */}
+    <div
+      className={`min-h-dvh flex flex-col bg-slate-950 text-white select-none ${
+        celebration && (celebration.emotion.id as ModerateEmotionId) === 'anger'
+          ? 'animate-mod-shake'
+          : ''
+      }`}
+    >
       <header className="shrink-0 px-4 pt-4 pb-2 text-center">
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-wide">
           而家覺得點？
@@ -84,8 +317,7 @@ export function ModerateModeShell({
         </p>
       </header>
 
-      {/* 2×2 超大情緒格 */}
-      <main className="flex-1 min-h-0 p-3 sm:p-4 md:p-6">
+      <main className="flex-1 min-h-0 p-3 sm:p-4 md:p-6 pb-24">
         <div
           className="h-full grid grid-cols-2 grid-rows-2 gap-3 sm:gap-4 md:gap-5 max-w-5xl mx-auto"
           role="group"
@@ -93,6 +325,7 @@ export function ModerateModeShell({
         >
           {MODERATE_EMOTIONS.map((emotion) => {
             const isLast = lastId === emotion.id
+            const isPressed = pressedId === emotion.id
             return (
               <button
                 key={emotion.id}
@@ -110,13 +343,14 @@ export function ModerateModeShell({
                   active:scale-95
                   focus-visible:ring-8 focus-visible:ring-white focus:outline-none
                   touch-manipulation
-                  ${isLast ? 'scale-[1.02] ring-4 ring-white/80' : ''}
+                  ${isLast ? 'ring-4 ring-white/90' : ''}
+                  ${isPressed ? 'animate-mod-btn-jello' : ''}
                 `}
                 style={{
                   backgroundColor: emotion.hexSoft,
                   borderColor: emotion.hex,
                   color: emotion.hex,
-                  minHeight: '42vw',
+                  minHeight: '38vw',
                 }}
               >
                 <span
@@ -138,8 +372,33 @@ export function ModerateModeShell({
         </div>
       </main>
 
-      {/* 老師入口 — 細、角落、唔搶學生注意 */}
-      <footer className="shrink-0 px-3 pb-3 flex justify-end safe-pb">
+      {/* 底部鞏固條 — 慶祝後仍留 5s */}
+      {sticky && (
+        <div
+          key={`sticky-${sticky.id}-${clickCount}`}
+          className="fixed bottom-0 inset-x-0 z-30 px-3 pb-3 pt-2 pointer-events-none animate-mod-sticky-in"
+          role="status"
+          aria-live="polite"
+        >
+          <div
+            className="mx-auto max-w-xl rounded-2xl border-4 px-4 py-3 flex items-center justify-center gap-3 shadow-2xl"
+            style={{
+              backgroundColor: sticky.hexSoft,
+              borderColor: sticky.hex,
+              color: sticky.hex,
+            }}
+          >
+            <span className="text-4xl sm:text-5xl" aria-hidden>
+              {sticky.emoji}
+            </span>
+            <span className="text-xl sm:text-2xl font-black">
+              你揀咗：{sticky.labelZh}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <footer className="shrink-0 px-3 pb-3 flex justify-end">
         <button
           type="button"
           onClick={onTeacherOpen}
@@ -151,64 +410,88 @@ export function ModerateModeShell({
         </button>
       </footer>
 
-      {/* 全屏慶祝 */}
-      {lastId && (
-        <div
-          key={`flash-${lastId}-${clickCount}`}
-          className="fixed inset-0 pointer-events-none z-40 animate-trigger-flash"
-          style={{
-            backgroundColor: MODERATE_EMOTIONS.find((e) => e.id === lastId)?.hex,
-            mixBlendMode: 'screen',
-          }}
-          aria-hidden="true"
-        />
-      )}
-
+      {/* 全屏慶祝層 */}
       {celebration && (
         <div
           key={celebration.key}
-          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none animate-celebration-pop"
+          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none animate-mod-cele-hold"
           role="status"
-          aria-live="polite"
+          aria-live="assertive"
         >
+          {/* 邊框 pulse */}
           <div
-            className="px-10 py-8 rounded-[2rem] shadow-2xl border-8 border-white text-center animate-celebration-scale"
+            className="absolute inset-0 animate-mod-border-pulse"
+            style={
+              {
+                '--mod-color': celebration.emotion.hex,
+              } as React.CSSProperties
+            }
+            aria-hidden
+          />
+
+          {/* 底色 flash */}
+          <div
+            className="absolute inset-0 animate-trigger-flash"
             style={{
-              backgroundColor: celebration.emotion.hexSoft,
-              color: celebration.emotion.hex,
+              backgroundColor: celebration.emotion.hex,
+              mixBlendMode: 'screen',
             }}
+            aria-hidden
+          />
+
+          <ParticleField
+            emotionId={celebration.emotion.id as ModerateEmotionId}
+            color={celebration.emotion.hex}
+          />
+
+          {/* 中央大 emoji + 字 */}
+          <div
+            className="relative z-10"
           >
+            {(celebration.emotion.id as ModerateEmotionId) === 'sadness' && (
+              <div
+                className="absolute inset-0 rounded-[2rem] animate-mod-hug-glow"
+                aria-hidden
+              />
+            )}
             <div
-              className="leading-none mb-3"
-              style={{ fontSize: 'clamp(6rem, 28vw, 12rem)' }}
+              className="relative px-10 py-8 rounded-[2rem] shadow-2xl border-8 border-white text-center animate-mod-modal-in"
+              style={{
+                backgroundColor: celebration.emotion.hexSoft,
+                color: celebration.emotion.hex,
+              }}
             >
-              {celebration.emotion.emoji}
-            </div>
-            <div
-              className="font-black"
-              style={{ fontSize: 'clamp(2.5rem, 10vw, 5rem)' }}
-            >
-              {celebration.emotion.labelZh}
+              <div
+                className="leading-none mb-3 animate-mod-emoji-jello"
+                style={{ fontSize: 'clamp(6rem, 28vw, 12rem)' }}
+                aria-hidden
+              >
+                {celebration.emotion.emoji}
+              </div>
+              <div
+                className="font-black"
+                style={{ fontSize: 'clamp(2.5rem, 10vw, 5rem)' }}
+              >
+                {celebration.emotion.labelZh}
+              </div>
+              <div className="mt-2 text-lg sm:text-xl font-bold opacity-80">
+                做得好！
+              </div>
             </div>
           </div>
 
-          {/* confetti bits */}
-          {Array.from({ length: 18 }).map((_, i) => (
+          {/* rings */}
+          {Array.from({ length: 3 }).map((_, i) => (
             <div
-              key={`c-${i}`}
-              className="absolute rounded-sm animate-confetti-fall"
-              style={
-                {
-                  width: `${10 + (i % 3) * 4}px`,
-                  height: `${14 + (i % 3) * 4}px`,
-                  left: `${(i * 5.5) % 100}%`,
-                  top: '-20px',
-                  backgroundColor: celebration.emotion.hex,
-                  animationDelay: `${(i % 6) * 0.07}s`,
-                  '--drift': `${(i % 2 === 0 ? 1 : -1) * (16 + (i % 4) * 8)}px`,
-                  '--spin': `${(i % 2 === 0 ? 1 : -1) * (160 + (i % 3) * 40)}deg`,
-                } as React.CSSProperties
-              }
+              key={`ring-${i}`}
+              className="absolute left-1/2 top-1/2 rounded-full border-4 animate-mod-ring"
+              style={{
+                width: 160,
+                height: 160,
+                borderColor: celebration.emotion.hex,
+                animationDelay: `${0.15 + i * 0.2}s`,
+              }}
+              aria-hidden
             />
           ))}
         </div>
