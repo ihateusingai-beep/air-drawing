@@ -56,6 +56,25 @@ export function generateRandomId(): string {
   return id
 }
 
+/** Dwell time bounds (R40 — 0.3-1.0s safe range) */
+export const DWELL_TIME_MIN_MS = 300
+export const DWELL_TIME_MAX_MS = 1000
+export const DWELL_TIME_DEFAULT_MS = 500
+export const DWELL_TIME_STEP_MS = 50
+
+/** Clamp dwell time 落 safe range */
+export function clampDwellTimeMs(ms: number): number {
+  return Math.max(DWELL_TIME_MIN_MS, Math.min(DWELL_TIME_MAX_MS, Math.round(ms)))
+}
+
+/** Detect 過低 / 過高 warning level(對應 plan §12.2 預設建議) */
+export function dwellWarningLevel(ms: number): 'fast' | 'slow' | null {
+  if (ms < DWELL_TIME_MIN_MS || ms > DWELL_TIME_MAX_MS) return null
+  if (ms < 400) return 'fast' // 智障 / ASD 學生 fast
+  if (ms > 800) return 'slow' // 防誤觸
+  return null
+}
+
 const META_LAST_PROFILE = 'lastProfileId'
 const META_LAST_MODE = 'lastMode'
 
@@ -105,7 +124,7 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
       id: generateRandomId(),
       name: name.trim() || `Student ${Math.floor(Math.random() * 1000)}`,
       defaultMode,
-      dwellTimeMs: 500,
+      dwellTimeMs: DWELL_TIME_DEFAULT_MS,
       ttsEnabled: true,
       createdAt: Date.now(),
     }
@@ -131,7 +150,12 @@ export const useProfileStore = create<ProfileStoreState>((set, get) => ({
   updateProfile: async (id, patch) => {
     const profile = get().profiles.find((p) => p.id === id)
     if (!profile) return
-    const updated = { ...profile, ...patch }
+    // R40 緩解: validate dwellTimeMs 範圍, 防止 store invalid data
+    const validated: Partial<ProfileRecord> = { ...patch }
+    if (validated.dwellTimeMs !== undefined) {
+      validated.dwellTimeMs = clampDwellTimeMs(validated.dwellTimeMs)
+    }
+    const updated = { ...profile, ...validated }
     await putProfile(updated)
     set({
       profiles: get().profiles.map((p) => (p.id === id ? updated : p)),

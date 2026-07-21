@@ -19,10 +19,11 @@
  * R39 緩解:iPad auto-disable dwell
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { EMOTIONS_BY_ID, GRID_LAYOUT, SKIP_CELL, type Emotion, type EmotionId } from '../constants/emotions'
 import { speak, stopTts, isTtsSupported, preloadVoices, setTtsEnabled, getTtsEnabled } from '../services/tts'
 import { useDwellClick } from '../hooks/useFingerHover'
+import { useProfileStore } from '../store/profileStore'
 
 interface WeakModeShellProps {
   onExit: () => void
@@ -66,6 +67,17 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   const [lastClicked, setLastClicked] = useState<EmotionId | 'skip' | null>(null)
   const [clickCount, setClickCount] = useState(0)
 
+  // R36 緩解: webcam optional, default 唔開(避免 chip 遮鏡頭 image)
+  const [showWebcam, setShowWebcam] = useState(false)
+  const [webcamOpacity, setWebcamOpacity] = useState(0) // 預設 0, 唔遮 chip
+  const webcamRef = useRef<HTMLVideoElement | null>(null)
+
+  // R40 緩解: 從 active profile 讀 dwell time(per profile 設定)
+  const activeProfile = useProfileStore((s) =>
+    s.profiles.find((p) => p.id === s.activeProfileId),
+  )
+  const dwellTimeMs = activeProfile?.dwellTimeMs ?? 500
+
   // Preload voices on mount (R33 iOS PWA 緩解)
   useEffect(() => {
     preloadVoices()
@@ -100,7 +112,7 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
   )
 
   const { hoveredId, progress, getChipProps, isIpad } = useDwellClick({
-    dwellTimeMs: 500,
+    dwellTimeMs,
     onTrigger: (id) => handleTrigger(id, 'mouse-dwell'),
   })
 
@@ -109,6 +121,43 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       setTtsEnabled(!on)
       return !on
     })
+  }, [])
+
+  // R36 緩解: webcam toggle (optional, 唔遮 chip 預設)
+  const handleWebcamToggle = useCallback(async () => {
+    if (!showWebcam) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: 640, height: 480 },
+          audio: false,
+        })
+        if (webcamRef.current) {
+          webcamRef.current.srcObject = stream
+          await webcamRef.current.play()
+        }
+        setShowWebcam(true)
+      } catch {
+        // BUG 10 fallback: show load error
+        setShowWebcam(false)
+      }
+    } else {
+      if (webcamRef.current?.srcObject) {
+        const tracks = (webcamRef.current.srcObject as MediaStream).getTracks()
+        tracks.forEach((t) => t.stop())
+        webcamRef.current.srcObject = null
+      }
+      setShowWebcam(false)
+    }
+  }, [showWebcam])
+
+  // R10 fix: webcam cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (webcamRef.current?.srcObject) {
+        const tracks = (webcamRef.current.srcObject as MediaStream).getTracks()
+        tracks.forEach((t) => t.stop())
+      }
+    }
   }, [])
 
   return (
@@ -136,6 +185,20 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           )}
           <button
             type="button"
+            onClick={handleWebcamToggle}
+            aria-pressed={showWebcam}
+            className={`
+              px-3 py-1.5 rounded-lg text-xs font-semibold border transition active:scale-95
+              ${showWebcam
+                ? 'bg-green-500/20 border-green-500/50 text-green-300'
+                : 'bg-slate-700 text-slate-300 border-transparent'
+              }
+            `}
+          >
+            {showWebcam ? '🟢 鏡頭 ON' : '📷 鏡頭 OFF'}
+          </button>
+          <button
+            type="button"
             onClick={onExit}
             className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
           >
@@ -149,15 +212,29 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
           <p className="text-slate-300 text-sm sm:text-base">
             {isIpad
               ? '👆 用手指 click 一個表情'
-              : '🖱️ 將滑鼠 / 手指停留喺一個表情 0.5 秒,或者直接 click'}
+              : `🖱️ 將滑鼠 / 手指停留喺一個表情 ${(dwellTimeMs / 1000).toFixed(1)} 秒,或者直接 click`}
           </p>
         </div>
 
-        <div
-          className="grid grid-cols-3 gap-3 sm:gap-4 w-full max-w-3xl"
-          role="grid"
-          aria-label="Plutchik 8 情緒選擇"
-        >
+        <div className="relative w-full max-w-3xl">
+          {/* R36: webcam image layer 喺 chip 底下, opacity 預設 0, 唔遮 chip */}
+          {showWebcam && (
+            <video
+              ref={webcamRef}
+              className="absolute inset-0 w-full h-full object-cover rounded-2xl pointer-events-none transition-opacity duration-300"
+              style={{ opacity: webcamOpacity / 100 }}
+              autoPlay
+              playsInline
+              muted
+              aria-hidden="true"
+            />
+          )}
+
+          <div
+            className={`grid grid-cols-3 gap-3 sm:gap-4 relative ${showWebcam && webcamOpacity > 0 ? 'mix-blend-difference' : ''}`}
+            role="grid"
+            aria-label="Plutchik 8 情緒選擇"
+          >
           {GRID_LAYOUT.map((cell) => {
             const isSkip = cell.id === 'skip'
             const isHovered = hoveredId === cell.id
@@ -240,6 +317,29 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
               </button>
             )
           })}
+          </div>
+
+          {/* R36: webcam opacity slider (only when webcam on) */}
+          {showWebcam && (
+            <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-400">
+              <span>👤 鏡頭背景:</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={webcamOpacity}
+                onChange={(e) => setWebcamOpacity(Number(e.target.value))}
+                className="w-24 accent-amber-400"
+                aria-label="鏡頭背景透明度"
+              />
+              <span className="font-mono">{webcamOpacity}%</span>
+              {webcamOpacity > 50 && (
+                <span className="text-amber-300 ml-1" role="status">
+                  ⚠️ 過高可能遮 chip
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Live feedback strip */}
@@ -272,7 +372,7 @@ export function WeakModeShell({ onExit }: WeakModeShellProps): React.JSX.Element
       <footer className="px-4 py-3 text-center text-xs text-slate-500 border-t border-slate-700/50 space-y-1">
         <div>
           🟢 弱模式 · 揀情緒表達 ·{' '}
-          {isIpad ? 'iPad 觸控' : 'Dwell-click 0.5s'} · 本地紀錄
+          {isIpad ? 'iPad 觸控' : `Dwell-click ${(dwellTimeMs / 1000).toFixed(1)}s`} · 本地紀錄
         </div>
         <div className="opacity-60">
           已揀 {clickCount} 次 · 本地儲存(IndexedDB) · 私隱:零外流 🔒

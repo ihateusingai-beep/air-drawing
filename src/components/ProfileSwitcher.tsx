@@ -5,7 +5,15 @@
  */
 
 import { useState } from 'react'
-import { useProfileStore, type Mode } from '../store/profileStore'
+import {
+  useProfileStore,
+  type Mode,
+  DWELL_TIME_MIN_MS,
+  DWELL_TIME_MAX_MS,
+  DWELL_TIME_STEP_MS,
+  dwellWarningLevel,
+} from '../store/profileStore'
+import type { ProfileRecord } from '../services/idb'
 
 interface ProfileSwitcherProps {
   open: boolean
@@ -22,6 +30,12 @@ export function ProfileSwitcher({ open, onClose }: ProfileSwitcherProps): React.
 
   const [newName, setNewName] = useState('')
   const [newMode, setNewMode] = useState<Mode>('low')
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+  const updateProfile = useProfileStore((s) => s.updateProfile)
+
+  const selectedProfile = selectedProfileId
+    ? profiles.find((p) => p.id === selectedProfileId) ?? null
+    : null
 
   if (!open) return null
 
@@ -74,21 +88,33 @@ export function ProfileSwitcher({ open, onClose }: ProfileSwitcherProps): React.
                 key={p.id}
                 className={`
                   flex items-center justify-between gap-2 p-3 rounded-xl border-2
-                  ${p.id === activeId
+                  ${p.id === selectedProfileId
                     ? 'bg-amber-500/10 border-amber-400'
-                    : 'bg-slate-900 border-slate-700 hover:border-slate-600'
+                    : p.id === activeId
+                      ? 'bg-slate-800 border-slate-600'
+                      : 'bg-slate-900 border-slate-700 hover:border-slate-600'
                   }
                 `}
               >
                 <button
                   type="button"
-                  onClick={() => handleSelect(p.id)}
+                  onClick={() => setSelectedProfileId(p.id)}
                   className="flex-1 text-left"
+                  aria-pressed={p.id === selectedProfileId}
                 >
                   <div className="text-sm font-semibold text-white">{p.name}</div>
                   <div className="text-xs text-slate-400">
-                    ID: {p.id} · {p.defaultMode === 'low' ? '🟢' : p.defaultMode === 'mid' ? '🟡' : '🔴'} {p.defaultMode}
+                    ID: {p.id} · {p.defaultMode === 'low' ? '🟢' : p.defaultMode === 'mid' ? '🟡' : '🔴'} {p.defaultMode} · dwell {(p.dwellTimeMs / 1000).toFixed(1)}s
                   </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelect(p.id)}
+                  className="px-2 py-1 text-emerald-400 hover:bg-emerald-500/10 rounded text-xs"
+                  aria-label={`切換到 ${p.name}`}
+                  title="切換為當前學生"
+                >
+                  ✓
                 </button>
                 <button
                   type="button"
@@ -104,6 +130,16 @@ export function ProfileSwitcher({ open, onClose }: ProfileSwitcherProps): React.
         </div>
 
         <div className="border-t border-slate-700 pt-4 space-y-2">
+          {/* R40 緩解: 揀咗 profile 之後可調 dwell slider 0.3-1.0s */}
+          {selectedProfile && (
+            <DwellSliderSection
+              profile={selectedProfile}
+              onChange={async (ms) => {
+                await updateProfile(selectedProfile.id, { dwellTimeMs: ms })
+              }}
+            />
+          )}
+
           <h3 className="text-sm font-semibold text-slate-300">新增學生</h3>
           <div className="flex gap-2">
             <input
@@ -135,6 +171,68 @@ export function ProfileSwitcher({ open, onClose }: ProfileSwitcherProps): React.
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * DwellSliderSection — R40 UI 控件。
+ * 0.3-1.0s slider, 50ms step, 過低 / 過高 warning(R40 預設建議)。
+ */
+function DwellSliderSection({
+  profile,
+  onChange,
+}: {
+  profile: ProfileRecord
+  onChange: (ms: number) => void | Promise<void>
+}) {
+  const warning = dwellWarningLevel(profile.dwellTimeMs)
+  return (
+    <div className="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-700">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-amber-400">
+          ⏱️ {profile.name} 嘅停留時間
+        </h3>
+        <span className="text-sm font-mono text-white">
+          {(profile.dwellTimeMs / 1000).toFixed(2)}s
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={DWELL_TIME_MIN_MS}
+        max={DWELL_TIME_MAX_MS}
+        step={DWELL_TIME_STEP_MS}
+        value={profile.dwellTimeMs}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-amber-400"
+        aria-label="停留時間 (0.3 至 1.0 秒)"
+        aria-valuemin={DWELL_TIME_MIN_MS}
+        aria-valuemax={DWELL_TIME_MAX_MS}
+        aria-valuenow={profile.dwellTimeMs}
+      />
+
+      <div className="flex justify-between text-[10px] text-slate-500">
+        <span>0.3s (快)</span>
+        <span>0.5s (預設)</span>
+        <span>1.0s (慢)</span>
+      </div>
+
+      {warning && (
+        <p
+          className={`text-xs ${warning === 'fast' ? 'text-amber-300' : 'text-orange-300'}`}
+          role="status"
+        >
+          {warning === 'fast'
+            ? '⚡ 較快:適合智障 / ASD 學生,但可能誤觸'
+            : '🛡️ 較慢:防誤觸,但學生可能等不住'}
+        </p>
+      )}
+
+      <p className="text-[10px] text-slate-500">
+        💡 Dwell-click 停留時間越短,點擊越快但越易誤觸。智障 / ASD 學生建議
+        0.3-0.4s,學習遲緩建議 0.5s,怕誤觸可調到 0.7-0.8s。
+      </p>
     </div>
   )
 }
