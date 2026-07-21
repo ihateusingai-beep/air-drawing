@@ -238,7 +238,9 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
             externalPointer={null}
             showWebcam={showWebcam}
             webcamOpacity={webcamOpacity}
-            mirror={false}
+            // v3.0.8.2: 對齊 source v1.0 mirror=true
+            // 鏡頭顯示 + 學生用手指喺鏡頭前面畫, 必須 mirror 否則 user 見倒置
+            mirror={true}
             imperativeRef={drawingCanvasHandleRef}
           />
 

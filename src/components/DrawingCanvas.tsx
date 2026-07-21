@@ -129,21 +129,28 @@ export function DrawingCanvas({
     handleDrawMove(externalPointer)
   }, [externalPointer, mode, handleDrawMove])
 
-  // Mouse handlers
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // v3.0.8.2: PointerEvent 統一 handler (iPad + Mac + touch screen 全部)
+  // React 19 對 PointerEvent 完整支援, 取代舊 mouse + touch 兩套 handler
+  // 避免 desktop Chrome + iPad 雙重 fire 同一個 event
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      // pointerType = 'pen' | 'touch' | 'mouse' — 全部統一處理
+      // 不 preventDefault mouse 行為, 保留 scroll/zoom
+      if (e.pointerType === 'mouse' && e.button !== 0) return
       const canvas = drawingCanvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const p = toCanvasCoords(e.clientX, e.clientY, rect, CANVAS_W, CANVAS_H, mirror)
       lastPointRef.current = p
       isDrawingRef.current = true
+      // eslint-disable-next-line no-console
+      console.log('[DrawingCanvas] pointerDown', { type: e.pointerType, button: e.button, p })
     },
     [drawingCanvasRef, mirror],
   )
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (!isDrawingRef.current) return
       const canvas = drawingCanvasRef.current
       if (!canvas) return
@@ -154,42 +161,20 @@ export function DrawingCanvas({
     [drawingCanvasRef, mirror, handleDrawMove],
   )
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback(() => {
+    if (isDrawingRef.current) {
+      // eslint-disable-next-line no-console
+      console.log('[DrawingCanvas] pointerUp (stroke ended)')
+    }
     isDrawingRef.current = false
     lastPointRef.current = null
   }, [])
 
-  // Touch handlers
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLCanvasElement>) => {
-      e.preventDefault()
-      const canvas = drawingCanvasRef.current
-      if (!canvas || e.touches.length === 0) return
-      const rect = canvas.getBoundingClientRect()
-      const p = toCanvasCoords(e.touches[0].clientX, e.touches[0].clientY, rect, CANVAS_W, CANVAS_H, mirror)
-      lastPointRef.current = p
-      isDrawingRef.current = true
-    },
-    [drawingCanvasRef, mirror],
-  )
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLCanvasElement>) => {
-      e.preventDefault()
-      if (!isDrawingRef.current) return
-      const canvas = drawingCanvasRef.current
-      if (!canvas || e.touches.length === 0) return
-      const rect = canvas.getBoundingClientRect()
-      const p = toCanvasCoords(e.touches[0].clientX, e.touches[0].clientY, rect, CANVAS_W, CANVAS_H, mirror)
-      handleDrawMove(p)
-    },
-    [drawingCanvasRef, mirror, handleDrawMove],
-  )
-
-  const handleTouchEnd = useCallback(() => {
-    isDrawingRef.current = false
-    lastPointRef.current = null
-  }, [])
+  // v3.0.8.2 fix: 防止 touch event 同 pointer event 重複 fire
+  // 預設 browser 同時 fire touch + pointer, 我哋 disable touch-to-pointer 轉譯避免 double draw
+  // touchAction: 'none' (CSS) 設喺 canvas 已經 disable browser scroll/zoom
+  // touchAction 已設喺 'touch-none' 喺 className, 等於 none, browser 唔 fire mouse
+  // 但仍 fire pointer + touch, 我哋揀 pointer event 統一處理
 
   // Clear canvas
   const handleClear = useCallback(() => {
@@ -229,19 +214,21 @@ export function DrawingCanvas({
         height={CANVAS_H}
       />
 
-      {/* 3. Drawing canvas (top) */}
+      {/* 3. Drawing canvas (top)
+          v3.0.8.2: PointerEvent 統一 mouse + touch + pen input
+          移除 mouse / touch handler, 避免 desktop Chrome + iPad double-fire
+          React 19 PointerEvent 兼容所有 device
+      */}
       <canvas
         ref={drawingCanvasRef}
         className="absolute inset-0 w-full h-full object-cover cursor-crosshair touch-none"
         width={CANVAS_W}
         height={CANVAS_H}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       />
 
       {/* 4. Virtual cursor (for AI mode, controlled externally) */}
