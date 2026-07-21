@@ -1,38 +1,41 @@
 /**
- * Air Drawing — Phase 2 Step 6 (Weak mode 完整)
+ * Air Drawing — Phase 2 batch 2 (Step 1-5 完整整合).
  *
  * Plan: PLAN.md §12 (v2.0 — 3-tier accessibility)
- * Roadmap: ROADMAP.md Phase 2 Step 6
+ * Roadmap: ROADMAP.md Phase 2
  *
- * Step 6 ships:
- *  - F24 Mode entry router (3 chips: 弱/中/強)
- *  - F26 WeakModeShell 完整實裝:
- *      C1 Plutchik 8 emotion vocabulary (constants/emotions.ts)
- *      E18 TTS service (services/tts.ts)
- *      F23 Finger dwell-click (hooks/useFingerHover.ts)
- *      8 chip 3×3 grid + 1 skip(Proloquo2Go 對標)
- *  - F26 Mid / High mode shell stub(Phase 2 / 3 實裝)
- *  - AAC default (camera optional)
- *  - Cross-device baseline: viewport, 100dvh, iPad auto-detect
- *
- * Phase 2 Step 6.x (todo):
- *  - C2 MediaPipe Pose + 8 動作 classifier (mid mode)
- *  - High mode 1:1 行為完整實裝
- *  - E6 多 profile (亂數 ID + 加密)
- *  - E7 PIN 鎖
+ * Step ships:
+ *  - F24 Mode entry router (3 chips)
+ *  - F26 WeakModeShell (Step 6 — 完整 Plutchik 8 + TTS + dwell-click)
+ *  - F26 HighModeShell (Step 1-2 — 完整 source 1:1 行為 refactor)
+ *  - F26 MidModeShell (Phase 3 stub)
+ *  - E6 多 profile (Zustand + IndexedDB)
+ *  - E7 PIN 鎖 (PinLock)
  *  - E4 「今日感覺」prompt
+ *  - ProfileSwitcher
+ *  - E18 TTS (already shipped Step 6)
+ *  - F23 dwell-click (already shipped Step 6)
+ *  - AAC default (camera optional)
+ *  - Cross-device baseline
+ *
+ * Phase 3 將加:
+ *  - C2 MediaPipe Pose + 8 動作 classifier (mid mode)
+ *  - E9 Undo/Redo + 情緒日記 (high mode 完整)
+ *  - E11 情緒顏色記憶遊戲
+ *  - E20 印章 / 情緒符號
+ *  - Universal PWA (Phase 4b)
  */
 
 import { useEffect, useState, useCallback } from 'react'
 import { WeakModeShell } from './components/WeakModeShell'
-
-// ────────────────────────────────────────────────────────────────────
-// F24: Mode enum
-// ────────────────────────────────────────────────────────────────────
-type Mode = 'low' | 'mid' | 'high' | null
+import { HighModeShell } from './components/HighModeShell'
+import { ProfileSwitcher } from './components/ProfileSwitcher'
+import { PinLock } from './components/PinLock'
+import { DailyMoodPrompt, shouldShowDailyPrompt } from './components/DailyMoodPrompt'
+import { useProfileStore, type Mode } from './store/profileStore'
 
 const MODES: Array<{
-  id: Exclude<Mode, null>
+  id: Mode
   emoji: string
   labelZh: string
   labelEn: string
@@ -73,75 +76,16 @@ const MODES: Array<{
   },
 ]
 
-// ────────────────────────────────────────────────────────────────────
-// F26: Mid mode shell (🟡) — Phase 3 將加 MediaPipe Pose
-// ────────────────────────────────────────────────────────────────────
-function MidModeShell({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h1 className="text-lg font-semibold">🟡 中級模式 (Mid / Intermediate)</h1>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
-        >
-          ← 返模式選擇
-        </button>
-      </header>
-      <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 2 stub — Phase 3 將加:</p>
-        <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
-          <li>MediaPipe Pose (33 keypoints)</li>
-          <li>8 個 rule-based 動作 classifier (坐姿 friendly)</li>
-          <li>Pose-prompt overlay (「請舉高雙手」)</li>
-          <li>TTS 觸發語音 + 動作 log</li>
-        </ul>
-      </main>
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-// F26: High mode shell (🔴) — Phase 2/3 將加 source 1:1 行為
-// ────────────────────────────────────────────────────────────────────
-function HighModeShell({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h1 className="text-lg font-semibold">🔴 進階模式 (High / Advanced)</h1>
-        <button
-          type="button"
-          onClick={onExit}
-          className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
-        >
-          ← 返模式選擇
-        </button>
-      </header>
-      <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-        <p className="text-slate-300 text-sm">Phase 2 stub — Phase 3 將加:</p>
-        <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
-          <li>鏡頭 + MediaPipe Hands 食指 AI 畫畫</li>
-          <li>Canvas 畫圖 (smoothing + mirror)</li>
-          <li>顏色 / Rainbow / Eraser / 粗細</li>
-          <li>描紅模板 (4 種 + 中文字 + 表達卡)</li>
-          <li>Undo/Redo + 情緒日記 + 鍵盤 hotkey</li>
-          <li>存檔下載 PNG</li>
-        </ul>
-      </main>
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-// F24: Mode entry — 3 個大 chip
-// ────────────────────────────────────────────────────────────────────
 function ModeEntry({
   lastMode,
   onPick,
+  onOpenProfiles,
+  profileName,
 }: {
-  lastMode: Exclude<Mode, null> | null
-  onPick: (m: Exclude<Mode, null>) => void
+  lastMode: Mode | null
+  onPick: (m: Mode) => void
+  onOpenProfiles: () => void
+  profileName: string | null
 }) {
   return (
     <div className="min-h-dvh flex flex-col bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -152,6 +96,9 @@ function ModeEntry({
         <p className="text-sm text-slate-400 mt-2">
           Choose your mode · 為智障 / ASD / non-verbal 學生設計
         </p>
+        {profileName && (
+          <p className="text-xs text-amber-400 mt-1">👤 當前學生: {profileName}</p>
+        )}
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
@@ -197,7 +144,16 @@ function ModeEntry({
         </div>
       </main>
 
-      <footer className="px-4 py-4 text-center text-xs text-slate-500 border-t border-slate-700/50 space-y-1">
+      <footer className="px-4 py-4 text-center text-xs text-slate-500 border-t border-slate-700/50 space-y-2">
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={onOpenProfiles}
+            className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+          >
+            👤 揾學生 / 設定
+          </button>
+        </div>
         <div>
           🟢 輕鬆 = 揀表情 · 🟡 中級 = 做動作 · 🔴 進階 = 自由畫
         </div>
@@ -209,45 +165,102 @@ function ModeEntry({
   )
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 主 App
-// ────────────────────────────────────────────────────────────────────
+// Inline MidModeShell stub(Phase 3 將加 MediaPipe Pose)
+function MidModeShell({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="min-h-dvh flex flex-col bg-slate-900 text-white">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+        <h1 className="text-lg font-semibold">🟡 中級模式 (Mid / Intermediate)</h1>
+        <button
+          type="button"
+          onClick={onExit}
+          className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
+        >
+          ← 返模式選擇
+        </button>
+      </header>
+      <main className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+        <p className="text-slate-300 text-sm">Phase 3 將加:</p>
+        <ul className="text-slate-400 text-sm list-disc list-inside space-y-1 max-w-md">
+          <li>MediaPipe Pose (33 keypoints)</li>
+          <li>8 個 rule-based 動作 classifier (坐姿 friendly)</li>
+          <li>Pose-prompt overlay (「請舉高雙手」)</li>
+          <li>TTS 觸發語音 + 動作 log</li>
+        </ul>
+      </main>
+    </div>
+  )
+}
+
 function App() {
-  const [mode, setMode] = useState<Mode>(null)
-  const [lastMode, setLastMode] = useState<Exclude<Mode, null> | null>(null)
+  const [mode, setMode] = useState<Mode | null>(null)
+  const [showProfiles, setShowProfiles] = useState(false)
+  const [showPin, setShowPin] = useState(false)
+  const [showDailyMood, setShowDailyMood] = useState(false)
 
-  // Persist last mode to localStorage
+  const profiles = useProfileStore((s) => s.profiles)
+  const activeProfileId = useProfileStore((s) => s.activeProfileId)
+  const lastMode = useProfileStore((s) => s.lastMode)
+  const pinLockEnabled = useProfileStore((s) => s.pinLockEnabled)
+  const pinUnlocked = useProfileStore((s) => s.pinUnlocked)
+  const loadProfiles = useProfileStore((s) => s.loadProfiles)
+  const setLastMode = useProfileStore((s) => s.setLastMode)
+
+  // Initial load
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('air-drawing:lastMode') as
-        | Exclude<Mode, null>
-        | null
-      if (saved && (saved === 'low' || saved === 'mid' || saved === 'high')) {
-        setLastMode(saved)
-      }
-    } catch {
-      /* localStorage 鎖咗都 OK,fallback 唔 highlight */
-    }
-  }, [])
+    void loadProfiles()
+  }, [loadProfiles])
 
-  const pickMode = useCallback((m: Exclude<Mode, null>) => {
-    setMode(m)
-    setLastMode(m)
-    try {
-      localStorage.setItem('air-drawing:lastMode', m)
-    } catch {
-      /* ignore */
+  // Show daily mood prompt after profiles loaded (only if profile exists)
+  useEffect(() => {
+    if (profiles.length > 0 && activeProfileId && shouldShowDailyPrompt()) {
+      setShowDailyMood(true)
     }
-  }, [])
+  }, [profiles.length, activeProfileId])
+
+  // PIN lock when active profile has PIN + not unlocked
+  useEffect(() => {
+    if (pinLockEnabled && !pinUnlocked) {
+      setShowPin(true)
+    } else {
+      setShowPin(false)
+    }
+  }, [pinLockEnabled, pinUnlocked])
+
+  const pickMode = useCallback(
+    async (m: Mode) => {
+      setMode(m)
+      await setLastMode(m)
+    },
+    [setLastMode],
+  )
 
   const exitToEntry = useCallback(() => setMode(null), [])
 
-  // Render by mode
-  if (mode === 'low') return <WeakModeShell onExit={exitToEntry} />
-  if (mode === 'mid') return <MidModeShell onExit={exitToEntry} />
-  if (mode === 'high') return <HighModeShell onExit={exitToEntry} />
+  const activeProfile = profiles.find((p) => p.id === activeProfileId)
 
-  return <ModeEntry lastMode={lastMode} onPick={pickMode} />
+  return (
+    <>
+      {mode === 'low' && <WeakModeShell onExit={exitToEntry} />}
+      {mode === 'mid' && <MidModeShell onExit={exitToEntry} />}
+      {mode === 'high' && <HighModeShell onExit={exitToEntry} />}
+      {!mode && (
+        <ModeEntry
+          lastMode={lastMode}
+          onPick={pickMode}
+          onOpenProfiles={() => setShowProfiles(true)}
+          profileName={activeProfile?.name ?? null}
+        />
+      )}
+
+      <ProfileSwitcher open={showProfiles} onClose={() => setShowProfiles(false)} />
+      <PinLock
+        open={showPin}
+        autoCloseOnUnlock
+      />
+      <DailyMoodPrompt open={showDailyMood} onClose={() => setShowDailyMood(false)} />
+    </>
+  )
 }
 
 export default App
