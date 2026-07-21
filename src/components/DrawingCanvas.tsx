@@ -146,16 +146,9 @@ export function DrawingCanvas({
 
     const prev = lastPointRef.current
     if (!prev) {
-      // 第一次 frame: 起始 stroke + 落起點 dot
-      // 起點 dot 半徑 = brush.size/2 (lineCap round 已自動 round, 但 drawSegment
-      // 只 draw line segment, 起點用 lineCap round 都會 round 末端但唔會有 dot 起點)
-      // 解決: explicit 落 circle 喺起點
-      ctx.save()
-      ctx.fillStyle = brush.color
-      ctx.beginPath()
-      ctx.arc(externalPointer.x, externalPointer.y, brush.size / 2, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
+      // 第一次 frame: 起始 stroke (lineCap = 'round' 已經自動做 round endpoint,
+      // 唔需要 explicit fill circle — 否則 fill dot 同 finger cursor overlay
+      // 顏色 / 位置 / 大細 撞, 用戶視覺混淆以為 cursor 唔見咗)
       lastPointRef.current = externalPointer
       isDrawingRef.current = true
       return

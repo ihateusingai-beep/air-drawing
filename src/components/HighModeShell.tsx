@@ -315,10 +315,13 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
 
           {/* v3.0.8.4: Hand detection status + finger cursor overlay
               喺 DrawingCanvas 之下, stage 之外。
-              顯示 finger cursor 喺 mon position (fixed, 全 screen),
-              mirror flip 同 useFingerHoverOnElement 一致 (1 - tipX).
+              顯示 finger cursor 喺 mon position (fixed, 全 screen).
+              v3.0.8.7.1 fix: video element 冇 CSS scaleX(-1) (鏡頭唔 mirror 視覺),
+                同 drawing canvas stroke 用 normalized tipX 0-1 * 640 (唔 mirror) 一致,
+                所以 cursor 位置用 tipX (唔用 1-tipX)。
+                之前 1-tipX 會 mirror 飛去左邊, 但 stroke 落右邊, 用戶見 cursor 飛走。
               pointer-events-none 唔阻擋下層 click / pointer event
-              v3.0.8.7.1: 加 finger-cam toggle UX hint — finger ready 但未開 toggle
+              加 finger-cam toggle UX hint — finger ready 但未開 toggle
               顯示 affordance「按 ✏️ 開啟空中魔法筆」,否則 user 有 detection 但唔知點 draw */}
           {showWebcam && (
             <div className="mt-2 text-xs text-slate-500 flex flex-col gap-1" aria-live="polite">
@@ -344,11 +347,16 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
           {hand.isReady && hand.indexFingerTip && showWebcam && webcamRef.current && (() => {
             const v = webcamRef.current
             const rect = v.getBoundingClientRect()
-            const screenX = (1 - hand.indexFingerTip.x) * rect.width + rect.left
+            // v3.0.8.7.1 fix: 對齊 drawing stroke 嘅 mapping (tipX * 640)
+            // video element 冇 CSS scaleX(-1), 鏡頭視覺 = 物理 normalized 0-1
+            // 之前 (1 - tipX) 會 mirror 飛去左邊, 同 stroke 位置唔 match
+            const screenX = hand.indexFingerTip.x * rect.width + rect.left
             const screenY = hand.indexFingerTip.y * rect.height + rect.top
+            // eslint-disable-next-line no-console
+            console.log('[HighMode] finger cursor overlay', { tipX: hand.indexFingerTip.x, tipY: hand.indexFingerTip.y, screenX, screenY, rectW: rect.width, rectH: rect.height })
             return (
               <div
-                className="fixed pointer-events-none z-50"
+                className="fixed pointer-events-none z-[100]"
                 style={{
                   left: `${screenX}px`,
                   top: `${screenY}px`,
@@ -357,9 +365,9 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
                 aria-hidden="true"
               >
                 <div className="relative w-12 h-12 flex items-center justify-center">
-                  <div className="absolute inset-0 rounded-full bg-amber-400/20 blur-xl" />
-                  <div className="absolute inset-0 rounded-full bg-amber-400/50 animate-ping" />
-                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 border-[3px] border-white shadow-2xl flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full bg-cyan-400/30 blur-xl" />
+                  <div className="absolute inset-0 rounded-full bg-cyan-400/50 animate-ping" />
+                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-cyan-300 to-cyan-500 border-[3px] border-white shadow-2xl flex items-center justify-center">
                     <span className="text-lg leading-none">👆</span>
                   </div>
                 </div>
