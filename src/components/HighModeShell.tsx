@@ -21,6 +21,8 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { DrawingCanvas, DEFAULT_BRUSH, ERASER_BRUSH, type DrawingMode, type DrawingCanvasHandle } from './DrawingCanvas'
 import { usePageVisibility } from '../hooks/usePageVisibility'
 import { useHandTracker } from '../hooks/useHandTracker'
+import { useEmotionLog } from '../hooks/useEmotionLog'
+import { EmotionJournal } from './EmotionJournal'
 import { TemplatePicker } from './TemplatePicker'
 import { ColorPalette } from './ColorPalette'
 import { BrushSize } from './BrushSize'
@@ -70,6 +72,21 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
   const profile = useProfileStore((s) =>
     s.profiles.find((p) => p.id === s.activeProfileId),
   )
+
+  // Sprint 76 F1-B4b: 情緒日記 — save 動作自動 log joy (placeholder)
+  // 5s dedup 喺 useEmotionLog 入面 (memory rule 10)
+  // 將來 E8 full scope 改: bind emotion chip selection → log user-picked emotion
+  const emotionLog = useEmotionLog({ profileId: profile?.id })
+
+  // Sprint 76 F1-B4b: 情緒週報 modal toggle
+  const [journalOpen, setJournalOpen] = useState(false)
+
+  // Sprint 76 F1-B4b: SaveButton 完成後 log emotion
+  // memory rule 1: ungrounded pitch 唔做 — 暫用 'joy' placeholder (save 表達 high-arousal 完成)
+  // 用戶 field test feedback 後改
+  const handleSaveWithLog = useCallback(() => {
+    void emotionLog.log('joy', 'mouse-click')
+  }, [emotionLog])
 
   // Compute current brush
   const brush = isEraser
@@ -372,6 +389,19 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
 
         {/* Right: control panel */}
         <div className="w-full lg:w-80 flex flex-col gap-3 sm:gap-4">
+          {/* Sprint 76 F1-B4b: 情緒週報 button (control panel 頂部)
+              Memory rule 14 a11y: 44px touch target + aria-label
+              統一對齊 Weak mode 嘅右上角 button, 但用 compact list style (control panel 入面唔好 floating) */}
+          {profile && (
+            <button
+              type="button"
+              onClick={() => setJournalOpen(true)}
+              aria-label="開啟情緒週報"
+              className="w-full px-4 py-3 min-h-[44px] rounded-xl bg-amber-500/90 hover:bg-amber-400 text-slate-900 font-bold text-sm shadow-md active:scale-95 transition flex items-center justify-center gap-2"
+            >
+              📊 情緒週報
+            </button>
+          )}
           {/* v3.0.8.7 + v3.0.8.7.1: 空中魔法筆 toggle (finger-cam mode)
               開鏡頭後, 此按鈕才 work. 開啟後, 食指 hover 自動 draw
               v3.0.8.7.1: 用 handleFingerCamToggle callback 連 click sound + log */}
@@ -412,6 +442,7 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
             templateCanvas={templateCanvasRef.current}
             drawingCanvas={drawingCanvasRef.current}
             profileName={profile?.name}
+            onSave={handleSaveWithLog}
           />
         </div>
       </main>
@@ -419,6 +450,11 @@ export function HighModeShell({ onExit }: HighModeShellProps): React.JSX.Element
       <footer className="bg-slate-950 p-3 text-center text-xs text-slate-500 border-t border-slate-900 mt-auto">
         本應用程式完全在本機端運行, 不儲存 / 不傳輸任何視訊影像, 確保學生私隱安全 🔒
       </footer>
+
+      {/* Sprint 76 F1-B4b: 情緒週報 modal */}
+      {journalOpen && profile && (
+        <EmotionJournal profileId={profile.id} onClose={() => setJournalOpen(false)} />
+      )}
     </div>
   )
 }

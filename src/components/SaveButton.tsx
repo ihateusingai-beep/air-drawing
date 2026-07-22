@@ -10,12 +10,19 @@ interface SaveButtonProps {
   templateCanvas: HTMLCanvasElement | null
   drawingCanvas: HTMLCanvasElement | null
   profileName?: string
+  /**
+   * v3.0.8.7.4 (Sprint 76 F1-B4b): save 完成 callback
+   * 用嚟 log emotion 落 journal / trigger toast
+   * 唔 pass → silent (backward compat)
+   */
+  onSave?: () => void
 }
 
 export function SaveButton({
   templateCanvas,
   drawingCanvas,
   profileName,
+  onSave,
 }: SaveButtonProps): React.JSX.Element {
   const handleClick = () => {
     if (!templateCanvas || !drawingCanvas) return
@@ -28,6 +35,8 @@ export function SaveButton({
     if (typeof console !== 'undefined') {
       console.log('Saved artwork:', filename)
     }
+    // Sprint 76 F1: notify parent after save
+    onSave?.()
   }
 
   return (
