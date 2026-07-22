@@ -11,7 +11,9 @@
  *   - labelZh / labelEn: 雙語 label
  *   - hex: 主色綁定(用於 chip border / TTS pulse / R31 random pick)
  *   - hexSoft: bg color (a11y ≥4.5:1 contrast vs text)
- *   - ttsText: TTS 讀出文本
+ *   - ttsText: TTS 讀出文本(2026-07-22 v3.0.9 fix: 用單字 vocabulary, 唔再係
+ *     「我覺得係 X」完整句子, 對齊 AAC 工具 Proloquo2Go 嘅 chip-only TTS pattern。
+ *     重複 click 同一個 chip 唔會悶, ASD 學生 sensory load 較低)
  *   - pose: 中模式動作 mapping(Phase 3 實裝)
  *
  * 對標 Proloquo2Go / TouchChat(PLAN §10.2):
@@ -51,7 +53,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Joy',
     hex: '#F59E0B', // amber-500
     hexSoft: '#FEF3C7', // amber-100
-    ttsText: '我覺得係快樂',
+    ttsText: '開心',
     pose: 'hands_up',
   },
   {
@@ -61,7 +63,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Trust',
     hex: '#10B981', // emerald-500
     hexSoft: '#D1FAE5', // emerald-100
-    ttsText: '我覺得係信任',
+    ttsText: '信任',
     pose: 'hug',
   },
   {
@@ -71,7 +73,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Fear',
     hex: '#1F2937', // gray-800
     hexSoft: '#E5E7EB', // gray-200
-    ttsText: '我覺得係驚',
+    ttsText: '驚',
     pose: 'cover_face',
   },
   {
@@ -81,7 +83,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Surprise',
     hex: '#FBBF24', // amber-400
     hexSoft: '#FEF3C7', // amber-100
-    ttsText: '我覺得係驚喜',
+    ttsText: '驚喜',
     pose: 'clap',
   },
   {
@@ -91,7 +93,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Sadness',
     hex: '#1E40AF', // blue-800
     hexSoft: '#DBEAFE', // blue-100
-    ttsText: '我覺得係悲傷',
+    ttsText: '悲傷',
     pose: 'hands_down',
   },
   {
@@ -101,7 +103,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Disgust',
     hex: '#7C3AED', // violet-600
     hexSoft: '#EDE9FE', // violet-100
-    ttsText: '我覺得係討厭',
+    ttsText: '討厭',
     pose: 'step_back',
   },
   {
@@ -111,7 +113,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Anger',
     hex: '#DC2626', // red-600
     hexSoft: '#FEE2E2', // red-100
-    ttsText: '我覺得係嬲',
+    ttsText: '嬲',
     pose: 'fist',
   },
   {
@@ -121,7 +123,7 @@ export const EMOTIONS: ReadonlyArray<Emotion> = [
     labelEn: 'Anticipation',
     hex: '#EA580C', // orange-600
     hexSoft: '#FFEDD5', // orange-100
-    ttsText: '我覺得係期待',
+    ttsText: '期待',
     pose: 'pace',
   },
 ]
