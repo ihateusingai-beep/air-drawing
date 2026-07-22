@@ -1,0 +1,49 @@
+{
+  "name": "AI 魔法空中畫筆 · Non-verbal 表達輔具",
+  "short_name": "魔法畫筆",
+  "description": "Non-verbal 表達輔具 — Plutchik 8 emotion vocabulary, iPad + Notebook, 100% client-side, 0 上傳, 私隱零外流",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#f59e0b",
+  "categories": ["education", "lifestyle"],
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "🟢 輕鬆模式",
+      "short_name": "輕鬆",
+      "url": "./?mode=low",
+      "description": "直接跳到輕鬆模式 — 揀表情"
+    },
+    {
+      "name": "🔴 進階模式",
+      "short_name": "進階",
+      "url": "./?mode=high",
+      "description": "直接跳到進階模式 — 自由畫"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}
