@@ -17,12 +17,13 @@ import { GRID_LAYOUT, EMOTIONS_BY_ID, type Emotion, type EmotionId } from '../co
 import { speak, stopTts, preloadVoices } from '../services/tts'
 import { usePoseTracker, useLandmarkHistory } from '../hooks/usePoseTracker'
 import { usePageVisibility } from '../hooks/usePageVisibility'
+import { useEmotionLog } from '../hooks/useEmotionLog'
+import { EmotionJournal } from './EmotionJournal'
 import {
   classifyPose,
   POSE_LABELS,
   type PoseAction,
 } from '../lib/poseClassifier'
-import { appendEmotionLog } from '../services/idb'
 import { useProfileStore } from '../store/profileStore'
 
 interface MidModeShellProps {
@@ -43,6 +44,13 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
     const p = s.profiles.find((pp) => pp.id === s.activeProfileId)
     return p?.classifierTolerance ?? 1.0
   })
+
+  // Sprint 76 F1-B4c: 情緒日記 — 統一 useEmotionLog hook (5s dedup)
+  // 取代之前直接 call appendEmotionLog (冇 dedup, 易 spam)
+  const emotionLog = useEmotionLog({ profileId: activeProfileId ?? undefined })
+
+  // Sprint 76 F1-B4c: 情緒週報 modal toggle
+  const [journalOpen, setJournalOpen] = useState(false)
 
   // Pose state
   const [currentPose, setCurrentPose] = useState<PoseAction>('none')
@@ -178,20 +186,12 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
   const handleEmotionTrigger = useCallback(
     async (emotion: Emotion, source: 'mouse-dwell' | 'touch-click' | 'mouse-click' | 'pose-classifier') => {
       speak(emotion.ttsText, { lang: 'zh-Hant' })
-      if (activeProfileId) {
-        try {
-          await appendEmotionLog({
-            profileId: activeProfileId,
-            emotionId: emotion.id,
-            source,
-            ts: Date.now(),
-          })
-        } catch {
-          /* ignore */
-        }
-      }
+      // v3.0.8.7.4 (Sprint 76 F1-B4c): 統一 useEmotionLog hook
+      // 之前 direct appendEmotionLog call 冇 5s dedup, pose-classifier 連續 match 會 spam log
+      // 改用 hook 後 5s window per (profile, emotion, source) 自動 dedup
+      await emotionLog.log(emotion.id, source)
     },
-    [activeProfileId],
+    [emotionLog],
   )
 
   const handleWebcamToggle = useCallback(async () => {
@@ -313,6 +313,17 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
           <span className="text-xs text-slate-400 hidden sm:inline">(Mid / Intermediate)</span>
         </h1>
         <div className="flex items-center gap-2">
+          {/* Sprint 76 F1-B4c: 情緒週報 button (header 內, 對齊 Weak/High mode 統一位置) */}
+          {activeProfileId && (
+            <button
+              type="button"
+              onClick={() => setJournalOpen(true)}
+              aria-label="開啟情緒週報"
+              className="px-3 py-1.5 min-h-[36px] rounded-full bg-amber-500/90 hover:bg-amber-400 text-slate-900 text-xs font-bold border border-amber-300 transition active:scale-95"
+            >
+              📊 週報
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleWebcamToggle()}
@@ -569,6 +580,11 @@ export function MidModeShell({ onExit }: MidModeShellProps): React.JSX.Element {
       <footer className="px-4 py-3 text-center text-xs text-slate-500 border-t border-slate-700/50">
         🟡 中級模式 · MediaPipe Pose · 8 動作 classifier · tolerance {classifierTolerance.toFixed(1)} · 本地 0 上傳 🔒
       </footer>
+
+      {/* Sprint 76 F1-B4c: 情緒週報 modal */}
+      {journalOpen && activeProfileId && (
+        <EmotionJournal profileId={activeProfileId} onClose={() => setJournalOpen(false)} />
+      )}
     </div>
   )
 }
