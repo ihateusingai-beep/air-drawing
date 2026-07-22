@@ -20,6 +20,9 @@ import {
   ensureAudioContext,
   type EmotionSfxId,
 } from '../services/audio'
+import { useEmotionLog } from '../hooks/useEmotionLog'
+import { EmotionJournal } from './EmotionJournal'
+import { useProfileStore } from '../store/profileStore'
 
 const COOLDOWN_MS = 2200
 const CELE_MS = 3200
@@ -243,6 +246,16 @@ export function ModerateModeShell({
   const lastTriggerRef = useRef(0)
   const timersRef = useRef<Set<number>>(new Set())
 
+  // Sprint 76 F1-B4c: 情緒日記 — Moderate mode 接入
+  // 2x2 chip click → emotion log 入 IDB
+  // 5s dedup 自動防 double-click spam
+  // profileId undefined → silent no-op (跟 Weak/High/Mid 模式一致)
+  const activeProfileId = useProfileStore((s) => s.activeProfileId)
+  const emotionLog = useEmotionLog({ profileId: activeProfileId ?? undefined })
+
+  // Sprint 76 F1-B4c: 情緒週報 modal toggle
+  const [journalOpen, setJournalOpen] = useState(false)
+
   const addTimer = useCallback((id: number) => {
     timersRef.current.add(id)
   }, [])
@@ -264,6 +277,15 @@ export function ModerateModeShell({
       lastTriggerRef.current = now
 
       const id = emotion.id as ModerateEmotionId
+
+      // v3.0.8.7.4 (Sprint 76 F1-B4c): 自動 log emotion 入 journal
+      // 5s dedup 自動防 double-click spam (memory rule 10)
+      // Moderate 嘅 COOLDOWN_MS = 2200 (button cooldown) 同 useEmotionLog 5s dedup 互補:
+      // - COOLDOWN_MS 防 celebration re-trigger 太密
+      // - dedup 防 IDB 寫入太密
+      // 兩者都設, 防止連續 click 同一個 emotion 寫 5 條 entry
+      void emotionLog.log(emotion.id, 'mouse-click')
+
       setPressedId(id)
       const clearPress = window.setTimeout(() => {
         setPressedId(null)
@@ -398,7 +420,19 @@ export function ModerateModeShell({
         </div>
       )}
 
-      <footer className="shrink-0 px-3 pb-3 flex justify-end">
+      <footer className="shrink-0 px-3 pb-3 flex justify-end gap-2">
+        {/* Sprint 76 F1-B4c: 情緒週報 button (footer 內, 對齊 Weak/High/Mid) */}
+        {activeProfileId && (
+          <button
+            type="button"
+            onClick={() => setJournalOpen(true)}
+            aria-label="開啟情緒週報"
+            data-testid="journal-entry"
+            className="px-3 py-2 min-h-[36px] text-xs sm:text-sm rounded-xl bg-amber-500/90 hover:bg-amber-400 text-slate-900 font-bold border border-amber-300 active:scale-95"
+          >
+            📊 週報
+          </button>
+        )}
         <button
           type="button"
           onClick={onTeacherOpen}
@@ -495,6 +529,14 @@ export function ModerateModeShell({
             />
           ))}
         </div>
+      )}
+
+      {/* Sprint 76 F1-B4c: 情緒週報 modal */}
+      {journalOpen && activeProfileId && (
+        <EmotionJournal
+          profileId={activeProfileId}
+          onClose={() => setJournalOpen(false)}
+        />
       )}
     </div>
   )
